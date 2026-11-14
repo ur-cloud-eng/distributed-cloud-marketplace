@@ -33,7 +33,10 @@ async function sendVerificationEmail(to, firstName, verificationUrl) {
     const safeUrl = escapeHtml(url.toString());
 
     return transporter.sendMail({
-        from: process.env.MAIL_FROM,
+        from: {
+            name: "CortexOps",
+            address: process.env.MAIL_FROM
+        },
         to,
         subject: "Verify your CortexOps account",
 
