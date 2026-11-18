@@ -1,0 +1,4 @@
+<div class="two-column"><div><label for="dependency-group">Resource group</label><select id="dependency-group" disabled><option>Groups unavailable</option></select>
+<div class="spaced"><%- include('../partials/table', { caption: 'Infrastructure dependencies', columns: ['Resource','Type','Status','Relationship'] }) %></div>
+</div><aside class="panel"><h2>Selected resource</h2><dl class="property-list"><% for (const label of ['Depends on','Used by','Blocks deletion of']) { %><div><dt><%= label %></dt><dd>Unavailable</dd></div><% } %></dl><p class="muted small spaced">Relationships must come from real resource records.</p></aside></div>
+
