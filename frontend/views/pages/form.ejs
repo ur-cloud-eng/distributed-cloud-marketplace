@@ -1,0 +1,16 @@
+<div class="two-column"><div class="panel form-panel">
+<p class="notice">Creation requires verified backend services and prerequisite records. You can check the available fields locally.</p>
+<form data-local-form method="dialog"><fieldset disabled data-form-fields>
+<div class="field-grid <%= fields.some(field => field.key === 'cpu') ? 'capacity-fields' : '' %>">
+<% for (const field of fields) { %><%- include('../partials/field', { field }) %><% } %>
+</div>
+<p class="form-feedback" role="status"></p><div class="form-actions"><a class="button" href="<%= cancel %>">Cancel</a><button type="submit">Check fields</button><button class="primary" disabled><%= actionLabel %></button></div>
+</fieldset></form><noscript><p class="muted">Enable JavaScript to check form fields in this preview.</p></noscript>
+</div><aside class="stack">
+<section class="panel" aria-labelledby="review"><h2 id="review">Review</h2><dl class="property-list">
+<% for (const field of fields) { %><div><dt><%= field.label %></dt><dd data-review="<%= field.key %>">—</dd></div><% } %>
+</dl></section>
+<section class="panel" aria-labelledby="prerequisites"><h2 id="prerequisites">Prerequisites</h2><ul class="prerequisites"><% for (const prerequisite of prerequisites) { %><li><%= prerequisite %><span class="muted"> · Unverified</span></li><% } %></ul>
+<p class="muted small spaced">Availability and final validation require the existing backend.</p></section>
+</aside></div>
+

@@ -1,0 +1,16 @@
+<form class="filters" method="get" data-filter-form>
+<label class="sr-only" for="filter-search">Search by name, resource or action</label>
+<input id="filter-search" name="q" type="search" placeholder="Search by name, resource or action">
+<% for (const filter of filters) { %>
+<label><span class="sr-only"><%= filter %></span><select name="<%= filter.toLowerCase().replaceAll(' ', '-') %>">
+<option value=""><%= filter %>: All</option>
+<% if (filter === 'Type') { for (const item of resourceTypes) { %><option><%= item.label %></option><% } } %>
+<% if (filter === 'Status') { for (const option of ['Running','Stopped','Active','Starting','Failed','Creating']) { %><option><%= option %></option><% } } %>
+<% if (filter === 'Role') { for (const option of ['Customer','Provider','Administrator']) { %><option><%= option %></option><% } } %>
+<% if (filter === 'Result') { %><option>Success</option><option>Failed</option><% } %>
+<% if (filter === 'Email status') { %><option>Verified</option><option>Unverified</option><% } %>
+<% if (filter === 'Period') { %><option value="30">Last 30 days</option><option value="7">Last 7 days</option><% } %>
+</select></label>
+<% } %><button type="submit">Apply</button><button type="reset">Clear filters</button>
+</form><p class="filter-feedback muted" role="status"></p>
+

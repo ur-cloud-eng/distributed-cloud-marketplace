@@ -1,0 +1,19 @@
+<header class="navbar">
+<a class="brand" href="<%= base %>">CortexOps</a>
+<span class="portal-label"><%= role === 'admin' ? 'Administrator' : role === 'provider' ? 'Provider' : 'Customer' %> portal</span>
+<nav class="desktop-nav" aria-label="Portal"><%- include('navigation') %></nav>
+<div class="tools">
+  <form action="<%= base %><%= role === 'provider' ? '/hosts' : role === 'admin' ? '/infrastructure' : '/resources' %>" role="search">
+    <label class="sr-only" for="global-search">Search <%= role === 'provider' ? 'hosts' : 'resources' %></label>
+    <input id="global-search" name="q" type="search" placeholder="Search <%= role === 'provider' ? 'hosts' : 'resources' %>">
+  </form>
+  <% if (role !== 'admin') { %><a class="icon-button" href="<%= base %>/notifications" aria-label="Notifications"><img src="/assets/images/bell.svg" width="16" height="16" alt=""></a><% } %>
+  <a class="avatar" href="<%= base %>/account" aria-label="Account and security">···</a>
+</div>
+<button class="menu-button" type="button" aria-haspopup="dialog" aria-controls="portal-menu" hidden>Menu</button>
+</header>
+<dialog class="sidebar" id="portal-menu" aria-labelledby="menu-heading">
+<div class="section-heading"><h2 id="menu-heading">Portal navigation</h2><form method="dialog"><button>Close</button></form></div>
+<nav aria-label="Mobile portal"><%- include('navigation') %></nav>
+</dialog>
+

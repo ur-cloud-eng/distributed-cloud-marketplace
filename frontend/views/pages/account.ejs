@@ -1,0 +1,22 @@
+<nav class="tabs" aria-label="Account sections" data-tabs><a href="?tab=profile" data-tab="profile" aria-current="page">Profile</a><a href="?tab=security" data-tab="security">Security</a></nav>
+<div data-panel="profile" class="account-width panel">
+<% for (const field of fields) { %><%- include('../partials/field', { field }) %><% } %>
+<dl class="property-list"><div><dt>Account type</dt><dd>Unavailable</dd></div></dl>
+<div class="form-actions"><button disabled>Save changes</button></div>
+<p class="muted small">Profile data and editing permissions require the current-user service.</p>
+</div>
+<div data-panel="security" class="account-width stack" hidden>
+<section class="panel"><div class="section-heading"><h3>Two-factor authentication</h3><span class="status">Unavailable</span></div>
+<p class="muted">Authenticator enrollment status requires your account.</p>
+<div class="detail-actions"><a class="button" href="/preview/auth/two-factor/setup">View setup screen</a><button type="button" data-open="disable-two-factor" hidden>View disable dialog</button></div></section>
+<section class="panel"><div class="section-heading"><h3>Email verification</h3><span class="status">Unavailable</span></div><p class="muted">Verification status requires your account.</p></section>
+</div>
+<p class="muted small spaced">Account changes and sign-out require the existing session service.</p><button disabled class="spaced">Sign out</button>
+<dialog class="modal" id="disable-two-factor" aria-labelledby="disable-title">
+<h2 class="modal-title" id="disable-title">Disable two-factor authentication?</h2>
+<p>Your account will be protected by your password only. Enter a current code from your authenticator app to confirm.</p>
+<form data-local-form method="dialog"><fieldset disabled data-form-fields>
+<%- include('../partials/field', { field: { key: 'code', label: 'Authenticator code', kind: 'text', rule: 'totp', required: true, autocomplete: 'one-time-code' } }) %>
+<p class="form-feedback" role="status"></p><div class="form-actions"><button type="button" data-close>Cancel</button><button type="submit">Check code format</button><button disabled class="danger">Disable 2FA</button></div>
+</fieldset></form></dialog>
+
