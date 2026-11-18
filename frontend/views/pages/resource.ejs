@@ -1,0 +1,26 @@
+<p class="notice">Resource data unavailable. This screen describes the selected resource type and has no loaded record.</p>
+<div class="detail-actions">
+<% if (!readOnly && resourceType.slug === 'virtual-machine') { %><button disabled>Start</button><button disabled>Stop</button><% } %>
+<% if (!readOnly && resourceType.slug === 'virtual-network') { %><a class="button" href="<%= base %>/resources/create/subnet">Create subnet</a><% } %>
+<% if (!readOnly && resourceType.slug === 'subnet') { %><a class="button" href="<%= base %>/resources/create/virtual-machine">Create virtual machine</a><% } %>
+<% if (!readOnly && resourceType.slug === 'load-balancer') { %><button disabled>Edit targets</button><% } %>
+<% if (!readOnly) { %><button class="danger" disabled>Delete</button><% } %>
+</div>
+<%- include('../partials/detail-tabs') %>
+<div data-panel="overview" class="two-column"><div class="stack">
+<section class="panel"><h2>Properties</h2><dl class="property-list"><div><dt>Type</dt><dd><%= resourceType.label %></dd></div>
+<% for (const label of ['Name','Status','Resource group','Region','Created']) { %><div><dt><%= label %></dt><dd>Unavailable</dd></div><% } %>
+</dl></section>
+<% if (['virtual-machine','subnet','virtual-network','load-balancer'].includes(resourceType.slug)) { %>
+<section class="panel"><h2>Configuration</h2><dl class="property-list">
+<% for (const label of resourceType.slug === 'virtual-machine' ? ['Hosting class','vCPU','RAM','Disk','Virtual network','Subnet'] : resourceType.slug === 'virtual-network' ? ['Address space'] : resourceType.slug === 'subnet' ? ['Parent network','Address range'] : ['Virtual network','Target VMs']) { %>
+<div><dt><%= label %></dt><dd>Unavailable</dd></div><% } %>
+</dl></section><% } %>
+<% if (resourceType.slug === 'web-app') { %><section class="panel"><h2>Associated database (optional)</h2><p class="muted">Unavailable</p></section><% } %>
+</div><aside class="stack">
+<% if (readOnly) { %><section class="panel"><h2>Placement (administrator only)</h2><p class="muted">Host and provider data unavailable.</p></section><% } %>
+<section class="panel"><h2>Related activity</h2><p class="muted">Activity unavailable.</p></section><p class="muted small">Lifecycle and deletion actions require a loaded record and verified authorization and dependency rules.</p>
+</aside></div>
+<div data-panel="dependencies" hidden><%- include('../partials/unavailable', { heading: 'Dependencies unavailable', message: 'Load the selected resource and its relationships to inspect dependencies.' }) %></div>
+<div data-panel="activity" hidden><%- include('../partials/unavailable', { heading: 'Activity unavailable', message: 'Load activity associated with this resource.' }) %></div>
+
