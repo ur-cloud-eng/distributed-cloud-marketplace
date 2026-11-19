@@ -1,0 +1,50 @@
+
+require("dotenv").config({ path: require("path").join(__dirname, "backend/.env") });
+const { sessionMiddleware } = require("./backend/config/sessionConfig");
+const express = require('express');
+const path = require('path');
+const { checkDatabaseHealth } = require('./backend/BLL/healthService');
+const authRoutes = require('./backend/PL/routes/authRoutes');
+const instanceRoutes = require('./backend/PL/routes/instanceRoutes');
+
+const app = express();
+const port = process.env.PORT || 1337;
+
+app.use(express.json());
+
+app.use(sessionMiddleware);
+
+app.use('/api/auth', authRoutes);
+app.use('/api/instances', instanceRoutes);
+
+app.get('/api/health', (req, res) => {
+    res.json({
+        status: 'ok',
+        message: 'CortexOps API is running'
+    });
+});
+
+app.get('/api/db-health', async (req, res) => {
+    try {
+        await checkDatabaseHealth();
+
+        res.json({
+            status: 'ok',
+            database: 'connected'
+        });
+    } catch (err) {
+        console.error('Database error:', err);
+
+        res.status(503).json({
+            status: 'error',
+            database: 'unavailable'
+        });
+    }
+});
+
+app.use(express.static(path.join(__dirname, 'frontend')));
+
+app.listen(port, '0.0.0.0', () => {
+    console.log(`CortexOps API running on port ${port}`);
+});
+
