@@ -1,0 +1,57 @@
+
+<section class="catalog-section">
+
+    <h2>Describe your infrastructure</h2>
+
+    <p class="muted">
+        Describe your requirements and let CortexOps
+        recommend a suitable cloud architecture.
+    </p>
+
+    <form id="aiForm">
+
+        <label for="requirements">
+            Infrastructure requirements
+        </label>
+
+        <textarea
+            id="requirements"
+            name="requirements"
+            rows="6"
+            minlength="10"
+            maxlength="4000"
+            placeholder="I need a website with two virtual machines and a MySQL database..."
+            required
+        ></textarea>
+
+        <button
+            type="submit"
+            id="generateButton"
+            class="button primary"
+        >
+            Generate architecture
+        </button>
+
+    </form>
+
+    <p id="aiStatus" role="status"></p>
+
+</section>
+
+<section id="aiResult" class="catalog-section" hidden>
+
+    <h2>Recommended infrastructure</h2>
+
+    <p id="aiSummary"></p>
+
+    <p id="capacityStatus"></p>
+
+    <div id="aiResources" class="catalog-grid"></div>
+
+    <h3>Important information</h3>
+
+    <ul id="aiWarnings"></ul>
+
+</section>
+
+<script src="/assets/js/ai-architect.js" defer></script>

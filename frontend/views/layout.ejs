@@ -1,6 +1,8 @@
 <%- include('partials/head') %>
 <%- include('partials/navbar') %>
-<%- include('partials/preview') %>
+<% if (typeof previewMode === 'undefined' || previewMode) { %>
+    <%- include('partials/preview') %>
+<% } %>
 <main class="page" id="main">
 <% if (breadcrumbs.length) { %><nav class="breadcrumbs" aria-label="Breadcrumb"><ol>
 <% for (const [label,href] of breadcrumbs) { %><li><a href="<%= href %>"><%= label %></a></li><% } %>
