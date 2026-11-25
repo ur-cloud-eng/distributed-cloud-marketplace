@@ -88,7 +88,7 @@ Never claim that resources have been created.
                                 dependsOn: {
                                     type: "array",
                                     items: { type: "string" }
-                                }
+                                },
                                 region: {
                                     type: "string"
                                 },
@@ -101,11 +101,10 @@ Never claim that resources have been created.
                                 diskGb: {
                                     type: "integer"
                                 },
-                            },
-                            hostingClass: {
-                                type: "string",
-                                enum: ["Economy", "Business", "Critical"]
-                        
+                                hostingClass: {
+                                    type: "string",
+                                    enum: ["Economy", "Business", "Critical"]
+                                }
                             },
                             required: [
                                 "id",

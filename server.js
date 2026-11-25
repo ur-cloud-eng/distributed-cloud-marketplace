@@ -65,9 +65,6 @@ app.get('/api/db-health', async (req, res) => {
     }
 });
 
-// Serve frontend
-app.use(express.static(path.join(__dirname, 'frontend')));
-
 // Start server
 app.listen(port, '0.0.0.0', () => {
     console.log(`CortexOps API running on port ${port}`);
