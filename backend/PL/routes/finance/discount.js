@@ -8,23 +8,38 @@ const router = express.Router();
 const admin = requireRole("Admin");
 const h = (fn, message) => handle(fn, message, "Discount code already exists.");
 
-router.get("/", admin, h(async (req, res) => {
-    res.json(await discounts.listDiscounts());
-}, "Could not load discount codes."));
+router.get(
+    "/",
+    admin,
+    h(async (req, res) => {
+        res.json(await discounts.listDiscounts());
+    }, "Could not load discount codes.")
+);
 
-router.post("/", admin, h(async (req, res) => {
-    res.status(201).json(await discounts.createDiscount(req.body, req.user));
-}, "Could not create discount code."));
+router.post(
+    "/",
+    admin,
+    h(async (req, res) => {
+        res.status(201).json(await discounts.createDiscount(req.body, req.user));
+    }, "Could not create discount code.")
+);
 
-router.patch("/:id", admin, h(async (req, res) => {
-    const id = positiveInteger(req.params.id);
-    if (!id) throw bad("Invalid ID.");
+router.patch(
+    "/:id",
+    admin,
+    h(async (req, res) => {
+        const id = positiveInteger(req.params.id);
+        if (!id) throw bad("Invalid ID.");
 
-    res.json(await discounts.updateDiscount(id, req.body, req.user));
-}, "Could not update discount code."));
+        res.json(await discounts.updateDiscount(id, req.body, req.user));
+    }, "Could not update discount code.")
+);
 
-router.post("/validate", h(async (req, res) => {
-    res.json(await discounts.validateDiscount(req.body));
-}, "Could not validate discount code."));
+router.post(
+    "/validate",
+    h(async (req, res) => {
+        res.json(await discounts.validateDiscount(req.body));
+    }, "Could not validate discount code.")
+);
 
 module.exports = router;

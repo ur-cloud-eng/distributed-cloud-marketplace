@@ -1,4 +1,3 @@
-
 const db = require("../dbconn");
 
 // Find a user by ID
@@ -18,10 +17,8 @@ async function findById(userId) {
 async function findForLogin(email) {
     const [rows] = await db.execute(
         `SELECT u.user_id, u.password_hash, u.role,
-                u.email_verified_at, t.enabled_at
+                u.email_verified_at, u.totp_enabled_at AS enabled_at
          FROM Users u
-         LEFT JOIN UserTwoFactor t
-           ON u.user_id = t.user_id
          WHERE u.email = ?
          LIMIT 1`,
         [email]
@@ -35,11 +32,9 @@ async function findVerifiedTwoFactorUser(userId) {
     const [rows] = await db.execute(
         `SELECT u.user_id, u.role
          FROM Users u
-         INNER JOIN UserTwoFactor t
-           ON u.user_id = t.user_id
          WHERE u.user_id = ?
            AND u.email_verified_at IS NOT NULL
-           AND t.enabled_at IS NOT NULL`,
+           AND u.totp_enabled_at IS NOT NULL`,
         [userId]
     );
 
@@ -66,8 +61,9 @@ async function createUser({ firstName, lastName, email, passwordHash, role }) {
 
 async function twoFactorStatus(userId) {
     const [rows] = await db.execute(
-        `SELECT enabled_at IS NOT NULL AS enabled
-         FROM UserTwoFactor WHERE user_id = ?`, [userId]
+        `SELECT totp_enabled_at IS NOT NULL AS enabled
+         FROM Users WHERE user_id = ?`,
+        [userId]
     );
     return { enabled: Boolean(rows[0]?.enabled) };
 }

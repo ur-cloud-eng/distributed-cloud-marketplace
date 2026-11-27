@@ -13,8 +13,17 @@ const TYPES = ["Percentage", "Fixed"];
 function expirationDate(value) {
     if (value == null) return null;
     if (typeof value !== "string") throw bad("Invalid expiration date.");
-    const match = /^(\d{4}-\d{2}-\d{2})[Tt](\d{2}):(\d{2}):(\d{2})(?:\.\d+)?([Zz]|[+-]\d{2}:\d{2})$/.exec(value);
-    if (!match || !isDate(match[1]) || Number(match[2]) > 23 || Number(match[3]) > 59 || Number(match[4]) > 59)
+    const match =
+        /^(\d{4}-\d{2}-\d{2})[Tt](\d{2}):(\d{2}):(\d{2})(?:\.\d+)?([Zz]|[+-]\d{2}:\d{2})$/.exec(
+            value
+        );
+    if (
+        !match ||
+        !isDate(match[1]) ||
+        Number(match[2]) > 23 ||
+        Number(match[3]) > 59 ||
+        Number(match[4]) > 59
+    )
         throw bad("Expiration must be a valid RFC3339 date-time with a timezone.");
     const timestamp = Date.parse(value);
     if (!Number.isFinite(timestamp)) throw bad("Invalid expiration date.");
@@ -24,7 +33,7 @@ function expirationDate(value) {
     return utc.slice(0, 19).replace("T", " ");
 }
 
-const normalizeCode = value =>
+const normalizeCode = (value) =>
     typeof value === "string" ? value.trim().toUpperCase() || null : null;
 
 const findByCode = repository.findByCode;
@@ -37,7 +46,10 @@ function unusableReason(discount) {
     if (discount.max_uses !== null && Number(discount.used_count) >= Number(discount.max_uses))
         return "limit_reached";
 
-    if (discount.expires_at && Date.parse(discount.expires_at.replace(" ", "T") + "Z") <= Date.now())
+    if (
+        discount.expires_at &&
+        Date.parse(discount.expires_at.replace(" ", "T") + "Z") <= Date.now()
+    )
         return "expired";
 
     return null;
@@ -54,9 +66,11 @@ async function checkDiscount(db, raw) {
 function calculateDiscount(discount, subtotal) {
     const value = Number(discount.discount_value);
 
-    return money(discount.discount_type === "Percentage"
-        ? prorateMoney(subtotal, value, 100)
-        : Math.min(subtotal, value));
+    return money(
+        discount.discount_type === "Percentage"
+            ? prorateMoney(subtotal, value, 100)
+            : Math.min(subtotal, value)
+    );
 }
 
 // Lock and return a usable discount, or throw (used while creating invoices)
@@ -73,7 +87,7 @@ async function loadUsableDiscount(db, code) {
 
 function validate(body = {}, partial = false) {
     const v = {};
-    const has = key => !partial || body[key] !== undefined;
+    const has = (key) => !partial || body[key] !== undefined;
 
     if (has("code")) {
         v.code = normalizeCode(body.code);
@@ -87,13 +101,17 @@ function validate(body = {}, partial = false) {
 
     if (has("discount_value")) {
         v.discount_value = positiveAmount(body.discount_value);
-        if (!v.discount_value || v.discount_value > 99999999.99) throw bad("Invalid discount value.");
+        if (!v.discount_value || v.discount_value > 99999999.99)
+            throw bad("Invalid discount value.");
     }
 
     if (has("max_uses")) {
         v.max_uses = body.max_uses ?? null;
 
-        if (v.max_uses !== null && (!Number.isInteger(v.max_uses) || v.max_uses < 1 || v.max_uses > 2147483647))
+        if (
+            v.max_uses !== null &&
+            (!Number.isInteger(v.max_uses) || v.max_uses < 1 || v.max_uses > 2147483647)
+        )
             throw bad("Invalid usage limit.");
     }
 
@@ -122,7 +140,14 @@ async function createDiscount(db, body, admin) {
     const v = validate(body);
     checkPercentage(v.discount_type, v.discount_value);
 
-    const [result] = await repository.insertDiscount(db, [v.code, v.discount_type, v.discount_value, v.max_uses, v.expires_at, v.active ?? 1]);
+    const [result] = await repository.insertDiscount(db, [
+        v.code,
+        v.discount_type,
+        v.discount_value,
+        v.max_uses,
+        v.expires_at,
+        v.active ?? 1
+    ]);
 
     await logAudit(db, admin, "DISCOUNT_CODE_CREATED", "discount_code", result.insertId, v);
 
@@ -135,8 +160,10 @@ async function updateDiscount(db, id, body, admin) {
 
     if (!previous) throw notFound("Discount not found.");
 
-    checkPercentage(v.discount_type ?? previous.discount_type,
-        v.discount_value ?? Number(previous.discount_value));
+    checkPercentage(
+        v.discount_type ?? previous.discount_type,
+        v.discount_value ?? Number(previous.discount_value)
+    );
 
     const keys = Object.keys(v);
 
@@ -157,8 +184,15 @@ async function validateDiscount(db, body = {}) {
     const hasSubtotal = Object.hasOwn(body, "subtotal");
     const subtotal = hasSubtotal ? body.subtotal : null;
 
-    if (!code || !CODE_RE.test(code) ||
-        (hasSubtotal && (typeof subtotal !== "number" || !Number.isFinite(subtotal) || subtotal < 0 || subtotal > MAX_MONEY)))
+    if (
+        !code ||
+        !CODE_RE.test(code) ||
+        (hasSubtotal &&
+            (typeof subtotal !== "number" ||
+                !Number.isFinite(subtotal) ||
+                subtotal < 0 ||
+                subtotal > MAX_MONEY))
+    )
         throw bad("Invalid code or subtotal.");
 
     const { discount, reason } = await checkDiscount(db, code);
@@ -189,10 +223,14 @@ async function validateDiscount(db, body = {}) {
 }
 
 module.exports = {
-    normalizeCode, findByCode, checkDiscount, unusableReason, calculateDiscount,
+    normalizeCode,
+    findByCode,
+    checkDiscount,
+    unusableReason,
+    calculateDiscount,
     loadUsableDiscount,
     listDiscounts: () => listDiscounts(db),
-    createDiscount: (body, admin) => withTransaction(c => createDiscount(c, body, admin)),
-    updateDiscount: (id, body, admin) => withTransaction(c => updateDiscount(c, id, body, admin)),
-    validateDiscount: body => validateDiscount(db, body)
+    createDiscount: (body, admin) => withTransaction((c) => createDiscount(c, body, admin)),
+    updateDiscount: (id, body, admin) => withTransaction((c) => updateDiscount(c, id, body, admin)),
+    validateDiscount: (body) => validateDiscount(db, body)
 };

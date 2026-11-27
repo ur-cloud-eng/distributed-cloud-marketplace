@@ -11,26 +11,46 @@ async function register(input) {
     const password = input.password;
     const role = input.role;
 
-    if (!firstName || firstName.length > 100 || !lastName || lastName.length > 100 ||
-        !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.length > 254 ||
-        typeof password !== "string" || password.length < 12 ||
+    if (
+        !firstName ||
+        firstName.length > 100 ||
+        !lastName ||
+        lastName.length > 100 ||
+        !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) ||
+        email.length > 254 ||
+        typeof password !== "string" ||
+        password.length < 12 ||
         Buffer.byteLength(password, "utf8") > 72 ||
-        !["customer", "provider"].includes(role)) {
-        const error = new Error("Enter a valid name, email, role and password (at least 12 characters).");
+        !["customer", "provider"].includes(role)
+    ) {
+        const error = new Error(
+            "Enter a valid name, email, role and password (at least 12 characters)."
+        );
         error.status = 400;
         throw error;
     }
     // Do not create an unusable account when email delivery has not been configured.
-    if (!process.env.APP_BASE_URL || !process.env.BREVO_SMTP_HOST || !process.env.BREVO_SMTP_LOGIN ||
-        !process.env.BREVO_SMTP_KEY || !process.env.MAIL_FROM) {
-        const error = new Error("Registration email is not configured. Ask the administrator to configure SMTP.");
+    if (
+        !process.env.APP_BASE_URL ||
+        !process.env.BREVO_SMTP_HOST ||
+        !process.env.BREVO_SMTP_LOGIN ||
+        !process.env.BREVO_SMTP_KEY ||
+        !process.env.MAIL_FROM
+    ) {
+        const error = new Error(
+            "Registration email is not configured. Ask the administrator to configure SMTP."
+        );
         error.status = 503;
         throw error;
     }
     let baseUrl;
-    try { baseUrl = new URL(process.env.APP_BASE_URL); }
-    catch { throw new Error("Invalid APP_BASE_URL configuration"); }
-    if (!["http:", "https:"].includes(baseUrl.protocol)) throw new Error("Invalid APP_BASE_URL configuration");
+    try {
+        baseUrl = new URL(process.env.APP_BASE_URL);
+    } catch {
+        throw new Error("Invalid APP_BASE_URL configuration");
+    }
+    if (!["http:", "https:"].includes(baseUrl.protocol))
+        throw new Error("Invalid APP_BASE_URL configuration");
 
     const passwordHash = await bcrypt.hash(password, 12);
     let userId;
@@ -54,7 +74,10 @@ async function register(input) {
     } catch (error) {
         // The user was already created, and can use /resend-verification.
         console.error("Unable to send first verification email:", error.message);
-        return { message: "Account created, but verification email could not be sent. Use Resend verification later." };
+        return {
+            message:
+                "Account created, but verification email could not be sent. Use Resend verification later."
+        };
     }
 }
 module.exports = { register };

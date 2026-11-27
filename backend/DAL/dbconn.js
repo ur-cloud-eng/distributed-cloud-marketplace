@@ -1,4 +1,3 @@
-
 require("dotenv").config({ path: require("path").join(__dirname, "../../.env") });
 const mysql = require("mysql2/promise");
 
@@ -14,12 +13,18 @@ const con = mysql.createPool({
     dateStrings: true
 });
 
+con.on("connection", (connection) => {
+    connection.query("SET SESSION time_zone = '+00:00'", (error) => {
+        if (error) connection.destroy();
+    });
+});
+
 con.getConnection()
-    .then(connection => {
+    .then((connection) => {
         console.log("Database connected successfully");
         connection.release();
     })
-    .catch(error => {
+    .catch((error) => {
         console.error("Database connection failed:", error.message);
     });
 
@@ -44,7 +49,7 @@ async function withTransaction(callback) {
 
 con.withTransaction = withTransaction;
 // All reporting reads share one MVCC snapshot, even if the server defaults to READ COMMITTED.
-con.withReadSnapshot = async callback => {
+con.withReadSnapshot = async (callback) => {
     const connection = await con.getConnection();
     try {
         await connection.query("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ");
@@ -53,7 +58,9 @@ con.withReadSnapshot = async callback => {
         await connection.commit();
         return result;
     } catch (error) {
-        try { await connection.rollback(); } catch (rollbackError) {
+        try {
+            await connection.rollback();
+        } catch (rollbackError) {
             console.error("Could not roll back reporting snapshot:", rollbackError);
         }
         throw error;

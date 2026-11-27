@@ -1,4 +1,3 @@
-
 const crypto = require("node:crypto");
 const QRCode = require("qrcode");
 
@@ -16,24 +15,13 @@ function getEncryptionKey() {
 // Encrypt a TOTP secret
 function encryptSecret(userId, secret) {
     const iv = crypto.randomBytes(12);
-    const cipher = crypto.createCipheriv(
-        "aes-256-gcm",
-        getEncryptionKey(),
-        iv
-    );
+    const cipher = crypto.createCipheriv("aes-256-gcm", getEncryptionKey(), iv);
 
     cipher.setAAD(Buffer.from(`CortexOps:TOTP:${userId}`));
 
-    const encrypted = Buffer.concat([
-        cipher.update(secret, "utf8"),
-        cipher.final()
-    ]);
+    const encrypted = Buffer.concat([cipher.update(secret, "utf8"), cipher.final()]);
 
-    return Buffer.concat([
-        iv,
-        cipher.getAuthTag(),
-        encrypted
-    ]);
+    return Buffer.concat([iv, cipher.getAuthTag(), encrypted]);
 }
 
 // Decrypt a stored TOTP secret
@@ -48,25 +36,17 @@ function decryptSecret(userId, encryptedData) {
     const tag = data.subarray(12, 28);
     const encrypted = data.subarray(28);
 
-    const decipher = crypto.createDecipheriv(
-        "aes-256-gcm",
-        getEncryptionKey(),
-        iv
-    );
+    const decipher = crypto.createDecipheriv("aes-256-gcm", getEncryptionKey(), iv);
 
     decipher.setAAD(Buffer.from(`CortexOps:TOTP:${userId}`));
     decipher.setAuthTag(tag);
 
-    return Buffer.concat([
-        decipher.update(encrypted),
-        decipher.final()
-    ]).toString("utf8");
+    return Buffer.concat([decipher.update(encrypted), decipher.final()]).toString("utf8");
 }
 
 // Prepare 2FA enrollment
 async function createTwoFactorSetup(userId, email) {
-    const { generateSecret, generateURI } =
-        await import("otplib");
+    const { generateSecret, generateURI } = await import("otplib");
 
     const secret = generateSecret();
 
@@ -86,12 +66,7 @@ async function createTwoFactorSetup(userId, email) {
 }
 
 // Verify a six-digit code
-async function verifyTwoFactorCode(
-    userId,
-    encryptedSecret,
-    code,
-    lastUsedStep = null
-) {
+async function verifyTwoFactorCode(userId, encryptedSecret, code, lastUsedStep = null) {
     if (typeof code !== "string" || !/^\d{6}$/.test(code)) {
         return { valid: false };
     }
@@ -112,9 +87,7 @@ async function verifyTwoFactorCode(
 
     const result = await verify(options);
 
-    return result.valid
-        ? { valid: true, timeStep: result.timeStep }
-        : { valid: false };
+    return result.valid ? { valid: true, timeStep: result.timeStep } : { valid: false };
 }
 
 module.exports = {
@@ -123,4 +96,3 @@ module.exports = {
     encryptSecret,
     decryptSecret
 };
-

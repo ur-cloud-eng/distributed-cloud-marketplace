@@ -1,5 +1,5 @@
 const db = require("../dbconn");
-const transaction = require('../transaction');
+const transaction = require("../transaction");
 
 async function lockUserForToken(connection, parameters) {
     return connection.execute(
@@ -93,4 +93,15 @@ async function findUnverifiedByEmail(connection = db, parameters) {
     );
 }
 
-module.exports = { ...transaction, lockUserForToken, findRecentToken, invalidateUnusedTokens, insertToken, findToken, lockUserForVerification, consumeToken, markEmailVerified, findUnverifiedByEmail };
+module.exports = {
+    ...transaction,
+    lockUserForToken,
+    findRecentToken,
+    invalidateUnusedTokens,
+    insertToken,
+    findToken,
+    lockUserForVerification,
+    consumeToken,
+    markEmailVerified,
+    findUnverifiedByEmail
+};

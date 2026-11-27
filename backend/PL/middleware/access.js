@@ -13,7 +13,12 @@ function normalizeUser(raw) {
     if (!raw || typeof raw !== "object") return null;
 
     const id = positiveInteger(raw.userId ?? raw.user_id ?? raw.id);
-    const role = ROLE_ALIASES[String(raw.role ?? "").trim().toLowerCase()];
+    const role =
+        ROLE_ALIASES[
+            String(raw.role ?? "")
+                .trim()
+                .toLowerCase()
+        ];
 
     return id && role ? { id, role } : null;
 }
@@ -54,8 +59,18 @@ function sendError(res, error, fallbackMessage = "Request failed.") {
 
     console.error(error);
 
-    if (["ECONNREFUSED", "ECONNRESET", "ETIMEDOUT", "PROTOCOL_CONNECTION_LOST", "ER_CON_COUNT_ERROR"].includes(error.code))
-        return res.status(503).json({ error: "Database temporarily unavailable. Please try again later." });
+    if (
+        [
+            "ECONNREFUSED",
+            "ECONNRESET",
+            "ETIMEDOUT",
+            "PROTOCOL_CONNECTION_LOST",
+            "ER_CON_COUNT_ERROR"
+        ].includes(error.code)
+    )
+        return res
+            .status(503)
+            .json({ error: "Database temporarily unavailable. Please try again later." });
 
     if (["ER_NO_REFERENCED_ROW", "ER_NO_REFERENCED_ROW_2"].includes(error.code))
         return res.status(400).json({ error: "A referenced record does not exist." });
@@ -67,17 +82,19 @@ function sendError(res, error, fallbackMessage = "Request failed.") {
 }
 
 // Preserve application-level HttpError details and handle common database conflicts.
-const handle = (fn, message = "Request failed.", duplicate = "Record already exists.") =>
+const handle =
+    (fn, message = "Request failed.", duplicate = "Record already exists.") =>
     async (req, res) => {
         try {
             if (req.body == null) req.body = {};
             await fn(req, res);
         } catch (error) {
             if (error instanceof HttpError) return sendError(res, error, message);
-            if (error.code === "ER_DUP_ENTRY")
-                return res.status(409).json({ error: duplicate });
+            if (error.code === "ER_DUP_ENTRY") return res.status(409).json({ error: duplicate });
             if (["ER_LOCK_DEADLOCK", "ER_LOCK_WAIT_TIMEOUT"].includes(error.code))
-                return res.status(409).json({ error: "Another transaction is updating this record. Please retry." });
+                return res
+                    .status(409)
+                    .json({ error: "Another transaction is updating this record. Please retry." });
             return sendError(res, error, message);
         }
     };

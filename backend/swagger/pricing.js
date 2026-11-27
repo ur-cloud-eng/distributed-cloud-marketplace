@@ -1,149 +1,145 @@
 // Pricing endpoints for Swagger UI.
 module.exports = {
     "/api/pricing": {
-        "get": {
-            "tags": [
-                "Pricing"
-            ],
-            "summary": "List pricing rules",
-            "responses": {
-                "200": {
-                    "description": "Pricing rules"
+        get: {
+            tags: ["Pricing"],
+            summary: "List pricing rules",
+            responses: {
+                200: {
+                    description: "Pricing rules"
                 }
             }
         },
-        "post": {
-            "tags": [
-                "Pricing"
-            ],
-            "summary": "Create a pricing rule",
-            "requestBody": {
-                "required": true,
-                "content": {
+        post: {
+            tags: ["Pricing"],
+            summary: "Create a pricing rule",
+            requestBody: {
+                required: true,
+                content: {
                     "application/json": {
-                        "schema": {
-                            "$ref": "#/components/schemas/PricingRule"
+                        schema: {
+                            $ref: "#/components/schemas/PricingRule"
                         }
                     }
                 }
             },
-            "responses": {
-                "201": {
-                    "description": "Rule created"
+            responses: {
+                201: {
+                    description: "Rule created"
                 },
-                "400": {
-                    "description": "Invalid input"
+                400: {
+                    description: "Invalid input"
                 },
-                "409": {
-                    "description": "Resource and class combination already exists"
+                409: {
+                    description: "Resource and class combination already exists"
                 }
             }
         }
     },
     "/api/pricing/calculate": {
-        "post": {
-            "tags": [
-                "Pricing"
-            ],
-            "summary": "Calculate resource price",
-            "requestBody": {
-                "required": true,
-                "content": {
+        post: {
+            tags: ["Pricing"],
+            summary: "Calculate monthly and hourly resource price estimates",
+            description:
+                "Estimates full allocation at active monthly rates. Invoices use actual metered usage and rates active at invoice generation. VM storage metering is a separate pending integration.",
+            requestBody: {
+                required: true,
+                content: {
                     "application/json": {
-                        "schema": {
-                            "$ref": "#/components/schemas/CalculatePrice"
+                        schema: {
+                            $ref: "#/components/schemas/CalculatePrice"
                         }
                     }
                 }
             },
-            "responses": {
-                "200": {
-                    "description": "Calculated price"
+            responses: {
+                200: {
+                    description:
+                        "Calculated estimate with estimated_monthly_price, estimated_hourly_price, hours_per_month, currency and breakdown"
                 },
-                "400": {
-                    "description": "Invalid input"
+                400: {
+                    description: "Invalid input"
                 }
             }
         }
     },
     "/api/pricing/{id}": {
-        "delete": {
-            "tags": ["Pricing"],
-            "summary": "Deactivate pricing rule (preserves price history)",
-            "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "integer", "minimum": 1 } }],
-            "responses": { "200": { "description": "Rule deactivated" }, "404": { "description": "Active rule not found" } }
-        },
-        "put": {
-            "tags": [
-                "Pricing"
+        delete: {
+            tags: ["Pricing"],
+            summary: "Deactivate pricing rule (preserves price history)",
+            parameters: [
+                { name: "id", in: "path", required: true, schema: { type: "integer", minimum: 1 } }
             ],
-            "summary": "Update a pricing rule",
-            "parameters": [
+            responses: {
+                200: { description: "Rule deactivated" },
+                404: { description: "Active rule not found" }
+            }
+        },
+        put: {
+            tags: ["Pricing"],
+            summary: "Update a pricing rule",
+            parameters: [
                 {
-                    "name": "id",
-                    "in": "path",
-                    "required": true,
-                    "schema": {
-                        "type": "integer",
-                        "minimum": 1
+                    name: "id",
+                    in: "path",
+                    required: true,
+                    schema: {
+                        type: "integer",
+                        minimum: 1
                     }
                 }
             ],
-            "requestBody": {
-                "required": true,
-                "content": {
+            requestBody: {
+                required: true,
+                content: {
                     "application/json": {
-                        "schema": {
-                            "type": "object",
-                            "required": [
-                                "unit_price"
-                            ],
-                            "properties": {
-                                "unit_price": {
-                                    "type": "number",
-                                    "minimum": 0
+                        schema: {
+                            type: "object",
+                            required: ["unit_price"],
+                            properties: {
+                                unit_price: {
+                                    type: "number",
+                                    minimum: 0
                                 }
                             }
                         }
                     }
                 }
             },
-            "responses": {
-                "200": {
-                    "description": "Price updated"
+            responses: {
+                200: {
+                    description: "Price updated"
                 },
-                "400": {
-                    "description": "Invalid input"
+                400: {
+                    description: "Invalid input"
                 },
-                "404": {
-                    "description": "Rule not found"
+                404: {
+                    description: "Rule not found"
                 }
             }
         }
     },
     "/api/pricing/{id}/history": {
-        "get": {
-            "tags": [
-                "Pricing"
-            ],
-            "summary": "Get pricing history",
-            "parameters": [
+        get: {
+            tags: ["Pricing"],
+            summary: "Get pricing history",
+            parameters: [
                 {
-                    "name": "id",
-                    "in": "path",
-                    "required": true,
-                    "schema": {
-                        "type": "integer",
-                        "minimum": 1
+                    name: "id",
+                    in: "path",
+                    required: true,
+                    schema: {
+                        type: "integer",
+                        minimum: 1
                     }
                 }
             ],
-            "responses": {
-                "200": {
-                    "description": "Pricing history"
+            responses: {
+                200: {
+                    description: "Pricing history"
                 },
-                "404": {
-                    "description": "Rule not found"
+                404: {
+                    description: "Rule not found"
                 }
             }
         }

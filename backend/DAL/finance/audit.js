@@ -24,18 +24,21 @@ async function logAudit(connection, actor, action, entityType, entityId, details
         }
     }
 
-    await connection.execute(`
+    await connection.execute(
+        `
         INSERT INTO financial_audit_log
             (actor_id, actor_role, action, entity_type, entity_id, details)
         VALUES (?, ?, ?, ?, ?, ?)
-    `, [
-        actorId,
-        actor?.role ?? null,
-        action,
-        entityType,
-        entityId ?? null,
-        auditDetails == null ? null : JSON.stringify(auditDetails)
-    ]);
+    `,
+        [
+            actorId,
+            actor?.role ?? null,
+            action,
+            entityType,
+            entityId ?? null,
+            auditDetails == null ? null : JSON.stringify(auditDetails)
+        ]
+    );
 }
 
 async function listAudit({ limit = 50, entityType = null, entityId = null } = {}) {
@@ -52,13 +55,16 @@ async function listAudit({ limit = 50, entityType = null, entityId = null } = {}
 
     const where = filters.length ? `WHERE ${filters.join(" AND ")}` : "";
     const safeLimit = Math.min(positiveInteger(limit) || 50, 200);
-    const [rows] = await db.query(`
+    const [rows] = await db.query(
+        `
         SELECT id, actor_id, actor_role, action, entity_type, entity_id, details, created_at
         FROM financial_audit_log
         ${where}
         ORDER BY created_at DESC, id DESC
         LIMIT ${safeLimit}
-    `, params);
+    `,
+        params
+    );
     return rows;
 }
 

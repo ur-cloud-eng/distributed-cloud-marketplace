@@ -4,7 +4,9 @@ const { query, where } = require("../query");
 const COMMITTED = "('Requested', 'Approved', 'Paid')";
 
 // Earnings
-const listEarningLines = (params = []) => query(`
+const listEarningLines = (params = []) =>
+    query(
+        `
     SELECT pe.id, pe.payment_id, p.payment_reference,
            pe.gross_amount, pe.commission_rate,
            pe.commission_amount, pe.net_amount, pe.created_at
@@ -12,12 +14,15 @@ const listEarningLines = (params = []) => query(`
     JOIN payments p ON p.id = pe.payment_id
     WHERE pe.provider_id = ?
     ORDER BY pe.id DESC
-`, params);
+`,
+        params
+    );
 
 async function listEarnings(providerId) {
     const w = where({ "pe.provider_id": providerId });
 
-    return query(`
+    return query(
+        `
         SELECT pe.provider_id,
                ROUND(SUM(pe.gross_amount), 2) AS gross_earnings,
                ROUND(SUM(pe.commission_amount), 2) AS platform_commission,
@@ -35,36 +40,51 @@ async function listEarnings(providerId) {
         ${w.sql}
         GROUP BY pe.provider_id, w.committed
         ORDER BY pe.provider_id
-    `, [...(providerId == null ? [] : [providerId]), ...w.params]);
+    `,
+        [...(providerId == null ? [] : [providerId]), ...w.params]
+    );
 }
 
 async function balanceRows(conn, providerId, lock) {
-    const [earned] = await conn.execute(`
+    const [earned] = await conn.execute(
+        `
         SELECT net_amount
         FROM provider_earnings WHERE provider_id = ? ${lock ? "FOR UPDATE" : ""}
-    `, [providerId]);
+    `,
+        [providerId]
+    );
 
-    const [withdrawn] = await conn.execute(`
+    const [withdrawn] = await conn.execute(
+        `
         SELECT amount
         FROM withdrawal_requests WHERE provider_id = ? AND status IN ${COMMITTED} FOR UPDATE
-    `, [providerId]);
+    `,
+        [providerId]
+    );
 
     return { earned, withdrawn };
 }
 
 // Withdrawals
-const insertWithdrawal = (connection, params = []) => connection.execute(`
+const insertWithdrawal = (connection, params = []) =>
+    connection.execute(
+        `
     INSERT INTO withdrawal_requests (provider_id, amount, status, note)
     VALUES (?, ?, 'Requested', ?)
-`, params);
+`,
+        params
+    );
 
 async function listWithdrawals(providerId) {
     const w = where({ provider_id: providerId });
-    return query(`
+    return query(
+        `
         SELECT id, provider_id, amount, status, note, created_at, updated_at
         FROM withdrawal_requests ${w.sql}
         ORDER BY id DESC
-    `, w.params);
+    `,
+        w.params
+    );
 }
 
 const updateWithdrawalStatus = (connection, params = []) =>
@@ -77,7 +97,10 @@ const lockWithdrawalRequest = (connection, params = []) =>
     );
 
 const withdrawalOwner = async (connection, id) => {
-    const [[row]] = await connection.execute("SELECT provider_id FROM withdrawal_requests WHERE id = ?", [id]);
+    const [[row]] = await connection.execute(
+        "SELECT provider_id FROM withdrawal_requests WHERE id = ?",
+        [id]
+    );
     return row?.provider_id ?? null;
 };
 

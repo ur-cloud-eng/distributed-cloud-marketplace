@@ -1,20 +1,14 @@
-
 const bcrypt = require("bcrypt");
 const usersDAL = require("../../DAL/auth/usersDAL");
 
 // Used to reduce timing differences for unknown users
-const dummyHash = bcrypt.hashSync(
-    "dummy-password-not-in-use", 12
-);
+const dummyHash = bcrypt.hashSync("dummy-password-not-in-use", 12);
 
 // Validate login credentials
 async function authenticatePassword(email, password) {
     const user = await usersDAL.findForLogin(email);
 
-    const validPassword = await bcrypt.compare(
-        password,
-        user?.password_hash || dummyHash
-    );
+    const validPassword = await bcrypt.compare(password, user?.password_hash || dummyHash);
 
     if (!user || !validPassword || !user.email_verified_at) {
         return null;
@@ -47,7 +41,8 @@ async function getVerifiedTwoFactorUser(userId) {
 
 async function checkAuthorization(userId, sessionRole, allowedRoles) {
     const account = await usersDAL.findAuthorization(userId);
-    if (!account || !account.email_verified_at) return { status: 401, message: "Account unavailable" };
+    if (!account || !account.email_verified_at)
+        return { status: 401, message: "Account unavailable" };
     if (account.role !== sessionRole) return { status: 401, message: "Please log in again" };
     if (!allowedRoles.includes(account.role)) return { status: 403, message: "Access denied" };
     return null;

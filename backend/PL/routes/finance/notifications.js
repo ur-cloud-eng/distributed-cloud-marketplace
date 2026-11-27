@@ -5,41 +5,50 @@ const { bad, notFound } = require("../../../utils/helpers");
 const notifications = require("../../../BLL/finance/notificationService");
 
 const router = express.Router();
-const RECIPIENTS = ["Customer", "Provider"];
+const RECIPIENTS = ["Customer", "Provider", "Admin"];
 
-// Admins pick the recipient via query; everyone else sees only their own
-const scope = req => req.user.role === "Admin"
-    ? { type: req.query.recipient_type, id: positiveInteger(req.query.recipient_id) }
-    : { type: req.user.role, id: req.user.id };
+// Admins may explicitly select a recipient. The default is their own inbox.
+function scope(req) {
+    const { recipient_type: type, recipient_id: rawId } = req.query;
+    if (req.user.role !== "Admin" || (type === undefined && rawId === undefined))
+        return { type: req.user.role, id: req.user.id };
 
-router.get("/", handle(async (req, res) => {
-    const { type, id } = scope(req);
+    const id = positiveInteger(rawId);
+    if (!RECIPIENTS.includes(type) || !id) throw bad("Invalid recipient type or ID.");
+    return { type, id };
+}
 
-    if (!RECIPIENTS.includes(type) || !id) {
-        if (req.user.role === "Admin") throw bad("Invalid recipient type or ID.");
-        return res.json([]);
-    }
+router.get(
+    "/",
+    handle(async (req, res) => {
+        const { type, id } = scope(req);
 
-    res.json(await notifications.listNotifications({
-        recipientType: type,
-        recipientId: id,
-        unreadOnly: req.query.unread_only === "true"
-    }));
-}, "Could not load notifications."));
+        const { unread_only: unreadOnly } = req.query;
+        if (unreadOnly !== undefined && !["true", "false"].includes(unreadOnly))
+            throw bad("unread_only must be true or false.");
 
-router.patch("/:id/read", handle(async (req, res) => {
-    const id = positiveInteger(req.params.id);
-    if (!id) throw bad("Invalid notification ID.");
+        res.json(
+            await notifications.listNotifications({
+                recipientType: type,
+                recipientId: id,
+                unreadOnly: unreadOnly === "true"
+            })
+        );
+    }, "Could not load notifications.")
+);
 
-    const isAdmin = req.user.role === "Admin";
-    const { type, id: recipientId } = scope(req);
+router.patch(
+    "/:id/read",
+    handle(async (req, res) => {
+        const id = positiveInteger(req.params.id);
+        if (!id) throw bad("Invalid notification ID.");
 
-    if (!isAdmin && !RECIPIENTS.includes(type)) throw notFound("Notification not found.");
+        const { type, id: recipientId } = scope(req);
+        if (!(await notifications.markNotificationRead(id, { type, id: recipientId })))
+            throw notFound("Notification not found.");
 
-    if (!(await notifications.markNotificationRead(id, isAdmin ? null : { type, id: recipientId })))
-        throw notFound("Notification not found.");
-
-    res.json({ message: "Notification marked as read.", id, is_read: true });
-}, "Could not update notification."));
+        res.json({ message: "Notification marked as read.", id, is_read: true });
+    }, "Could not update notification.")
+);
 
 module.exports = router;

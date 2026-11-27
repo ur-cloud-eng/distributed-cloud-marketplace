@@ -1,84 +1,87 @@
 // Provider endpoints for Swagger UI.
 module.exports = {
     "/api/providers/me/earnings": {
-        "get": {
-            "tags": [
-                "Provider"
-            ],
-            "summary": "My earnings (Provider)",
-            "description": "Gross, commission, net, committed withdrawals, available balance, and the individual earning lines.",
-            "responses": {
-                "200": {
-                    "description": "Earnings summary"
+        get: {
+            tags: ["Provider"],
+            summary: "My earnings (Provider)",
+            description:
+                "Gross, commission, net, committed withdrawals, available balance, and the individual earning lines.",
+            responses: {
+                200: {
+                    description: "Earnings summary"
                 },
-                "401": {
-                    "description": "Not logged in"
+                401: {
+                    description: "Not logged in"
                 },
-                "403": {
-                    "description": "Your role may not use this endpoint"
+                403: {
+                    description: "Your role may not use this endpoint"
                 }
             }
         }
     },
     "/api/providers/me/withdrawals": {
-        "get": {
-            "tags": [
-                "Provider"
-            ],
-            "summary": "My withdrawal requests (Provider)",
-            "responses": {
-                "200": {
-                    "description": "Withdrawals"
+        get: {
+            tags: ["Provider"],
+            summary: "My withdrawal requests (Provider)",
+            responses: {
+                200: {
+                    description: "Withdrawals"
                 },
-                "401": {
-                    "description": "Not logged in"
+                401: {
+                    description: "Not logged in"
                 },
-                "403": {
-                    "description": "Your role may not use this endpoint"
+                403: {
+                    description: "Your role may not use this endpoint"
                 }
             }
         },
-        "post": {
-            "tags": [
-                "Provider"
+        post: {
+            tags: ["Provider"],
+            summary: "Request a withdrawal (Provider)",
+            parameters: [
+                {
+                    name: "Idempotency-Key",
+                    in: "header",
+                    required: false,
+                    description:
+                        "Reuse for retries of the same operation; changed data returns 409.",
+                    schema: { type: "string", maxLength: 128, pattern: "^[!-~]+$" }
+                }
             ],
-            "summary": "Request a withdrawal (Provider)",
-            "parameters": [{ "name": "Idempotency-Key", "in": "header", "required": false, "description": "Reuse for retries of the same operation; changed data returns 409.", "schema": { "type": "string", "maxLength": 128, "pattern": "^[!-~]+$" } }],
-            "requestBody": {
-                "required": true,
-                "content": {
+            requestBody: {
+                required: true,
+                content: {
                     "application/json": {
-                        "schema": {
-                            "type": "object",
-                            "required": [
-                                "amount"
-                            ],
-                            "properties": {
-                                "amount": {
-                                    "type": "number",
-                                    "exclusiveMinimum": 0
+                        schema: {
+                            type: "object",
+                            required: ["amount"],
+                            properties: {
+                                amount: {
+                                    type: "number",
+                                    minimum: 0,
+                                    exclusiveMinimum: true
                                 },
-                                "note": {
-                                    "type": "string",
-                                    "nullable": true
+                                note: {
+                                    type: "string",
+                                    nullable: true
                                 }
                             }
                         }
                     }
                 }
             },
-            "responses": {
-                "201": {
-                    "description": "Withdrawal requested"
+            responses: {
+                201: {
+                    description: "Withdrawal requested"
                 },
-                "400": {
-                    "description": "Invalid amount or above available balance"
+                400: {
+                    description: "Invalid amount or above available balance"
                 },
-                "401": {
-                    "description": "Not logged in"
+                401: {
+                    description: "Not logged in"
                 },
-                "403": {
-                    "description": "Your role may not use this endpoint"
+                403: {
+                    description: "Your role may not use this endpoint"
                 }
             }
         }

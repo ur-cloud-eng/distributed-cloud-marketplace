@@ -1,4 +1,3 @@
-
 const nodemailer = require("nodemailer");
 
 const transporter = nodemailer.createTransport({
@@ -13,13 +12,17 @@ const transporter = nodemailer.createTransport({
 });
 
 function escapeHtml(value) {
-    return String(value).replace(/[&<>"']/g, char => ({
-        "&": "&amp;",
-        "<": "&lt;",
-        ">": "&gt;",
-        '"': "&quot;",
-        "'": "&#39;"
-    })[char]);
+    return String(value).replace(
+        /[&<>"']/g,
+        (char) =>
+            ({
+                "&": "&amp;",
+                "<": "&lt;",
+                ">": "&gt;",
+                '"': "&quot;",
+                "'": "&#39;"
+            })[char]
+    );
 }
 
 async function sendVerificationEmail(to, firstName, verificationUrl) {
@@ -37,6 +40,7 @@ async function sendVerificationEmail(to, firstName, verificationUrl) {
             name: "CortexOps",
             address: process.env.MAIL_FROM
         },
+        // from : process.env.MAIL_FROM,
         to,
         subject: "Verify your CortexOps account",
 
@@ -92,4 +96,3 @@ CortexOps Team`,
 }
 
 module.exports = { sendVerificationEmail };
-

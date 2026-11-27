@@ -30,7 +30,7 @@ async function applyRefund(connection, { paymentId, amount, reason }) {
     if (!refundAmount) throw bad("Refund amount must be positive.");
 
     const payment = await lockPayment(connection, paymentId);
-    const remaining = money(payment.amount - await refundedTotal(connection, paymentId));
+    const remaining = money(payment.amount - (await refundedTotal(connection, paymentId)));
 
     if (refundAmount > remaining)
         throw bad("Refund exceeds the remaining refundable amount.", {
@@ -38,17 +38,31 @@ async function applyRefund(connection, { paymentId, amount, reason }) {
         });
 
     const [providers] = await repository.paymentProviders(connection, paymentId);
-    await lockProviders(connection, providers.map(row => row.provider_id));
+    await lockProviders(
+        connection,
+        providers.map((row) => row.provider_id)
+    );
     const [earnings] = await repository.lockPaymentEarnings(connection, [paymentId]);
 
     const adjustments = [];
 
-    const amounts = allocateAmounts(refundAmount, earnings.map(earning => Number(earning.gross_amount)));
+    const amounts = allocateAmounts(
+        refundAmount,
+        earnings.map((earning) => Number(earning.gross_amount))
+    );
 
     for (const [index, earning] of earnings.entries()) {
         const gross = amounts[index];
-        const commission = money(Math.max(gross - Number(earning.net_amount),
-            Math.min(gross, Number(earning.commission_amount), prorateMoney(earning.commission_amount, refundAmount, remaining))));
+        const commission = money(
+            Math.max(
+                gross - Number(earning.net_amount),
+                Math.min(
+                    gross,
+                    Number(earning.commission_amount),
+                    prorateMoney(earning.commission_amount, refundAmount, remaining)
+                )
+            )
+        );
         const net = money(gross - commission);
 
         const balance = await providerBalance(connection, earning.provider_id, true);
@@ -70,21 +84,40 @@ async function applyRefund(connection, { paymentId, amount, reason }) {
 
     const refundReference = makeRef("REF");
 
-    const [result] = await repository.insertRefund(connection, [refundReference, paymentId, refundAmount, reason ?? null]);
+    const [result] = await repository.insertRefund(connection, [
+        refundReference,
+        paymentId,
+        refundAmount,
+        reason ?? null
+    ]);
 
-    if (refundAmount === remaining)
-        await repository.markPaymentRefunded(connection, [paymentId]);
+    if (refundAmount === remaining) await repository.markPaymentRefunded(connection, [paymentId]);
 
-    const tell = (to, id, title, message) => notify(connection, {
-        to, id, type: "RefundSucceeded", title, message, paymentId, refundId: result.insertId
-    });
+    const tell = (to, id, title, message) =>
+        notify(connection, {
+            to,
+            id,
+            type: "RefundSucceeded",
+            title,
+            message,
+            paymentId,
+            refundId: result.insertId
+        });
 
-    await tell("Customer", payment.customer_id, "Refund processed",
-        `Refund ${refundReference} succeeded for $${refundAmount.toFixed(2)}.`);
+    await tell(
+        "Customer",
+        payment.customer_id,
+        "Refund processed",
+        `Refund ${refundReference} succeeded for $${refundAmount.toFixed(2)}.`
+    );
 
     for (const item of adjustments)
-        await tell("Provider", item.provider_id, "Earnings adjusted",
-            `Refund ${refundReference} reduced your net earnings by $${item.net_reduction.toFixed(2)}.`);
+        await tell(
+            "Provider",
+            item.provider_id,
+            "Earnings adjusted",
+            `Refund ${refundReference} reduced your net earnings by $${item.net_reduction.toFixed(2)}.`
+        );
 
     return {
         refund_id: result.insertId,
@@ -103,47 +136,62 @@ async function listRefunds({ paymentId = null } = {}) {
 }
 
 function createRefundRequest({ customerId, paymentId, amount, reason, requestKey = null }) {
-    return financialTransaction({ id: customerId, role: "Customer" }, requestKey,
-        "customer-refund-request", { paymentId, amount: amount ?? null, reason }, async connection => {
-        const payment = await lockPayment(connection, paymentId, customerId);
+    return financialTransaction(
+        { id: customerId, role: "Customer" },
+        requestKey,
+        "customer-refund-request",
+        { paymentId, amount: amount ?? null, reason },
+        async (connection) => {
+            const payment = await lockPayment(connection, paymentId, customerId);
 
-        const [[pending]] = await repository.pendingRequestTotal(connection, [paymentId]);
+            const [[pending]] = await repository.pendingRequestTotal(connection, [paymentId]);
 
-        const available = money(
-            Number(payment.amount) - await refundedTotal(connection, paymentId) - money(pending.total)
-        );
+            const available = money(
+                Number(payment.amount) -
+                    (await refundedTotal(connection, paymentId)) -
+                    money(pending.total)
+            );
 
-        const requested = amount == null ? available : positiveAmount(amount);
+            const requested = amount == null ? available : positiveAmount(amount);
 
-        if (!requested || requested <= 0 || requested > available)
-            throw bad("Invalid refund amount or insufficient available balance.", {
-                available_to_request: Math.max(0, available)
+            if (!requested || requested <= 0 || requested > available)
+                throw bad("Invalid refund amount or insufficient available balance.", {
+                    available_to_request: Math.max(0, available)
+                });
+
+            const [result] = await repository.insertRequest(connection, [
+                paymentId,
+                customerId,
+                requested,
+                reason ?? null
+            ]);
+
+            await notify(connection, {
+                to: "Customer",
+                id: customerId,
+                type: "RefundRequested",
+                title: "Refund requested",
+                message: `Your refund request #${result.insertId} for $${requested.toFixed(2)} on payment ${payment.payment_reference} is waiting for review.`,
+                paymentId
             });
 
-        const [result] = await repository.insertRequest(connection, [paymentId, customerId, requested, reason ?? null]);
+            await notifyAdmins(connection, {
+                notificationType: "RefundRequested",
+                title: "Refund request needs review",
+                message: `Refund request #${result.insertId} for $${requested.toFixed(2)} is waiting for admin review.`,
+                paymentId
+            });
 
-        await notify(connection, {
-            to: "Customer", id: customerId, type: "RefundRequested", title: "Refund requested",
-            message: `Your refund request #${result.insertId} for $${requested.toFixed(2)} on payment ${payment.payment_reference} is waiting for review.`,
-            paymentId
-        });
-
-        await notifyAdmins(connection, {
-            notificationType: "RefundRequested",
-            title: "Refund request needs review",
-            message: `Refund request #${result.insertId} for $${requested.toFixed(2)} is waiting for admin review.`,
-            paymentId
-        });
-
-        return {
-            refund_request_id: result.insertId,
-            payment_id: paymentId,
-            amount: requested,
-            reason: reason ?? null,
-            status: "Pending",
-            currency: "USD"
-        };
-    });
+            return {
+                refund_request_id: result.insertId,
+                payment_id: paymentId,
+                amount: requested,
+                reason: reason ?? null,
+                status: "Pending",
+                currency: "USD"
+            };
+        }
+    );
 }
 
 async function listRefundRequests({ customerId = null, status = null } = {}) {
@@ -156,7 +204,7 @@ function decideRefundRequest({ requestId, status, adminNote, admin }) {
     if (!["Approved", "Rejected"].includes(status))
         throw bad("Status must be Approved or Rejected.");
 
-    return withTransaction(async connection => {
+    return withTransaction(async (connection) => {
         const request = await repository.findRequest(connection, requestId);
 
         if (!request) throw new HttpError(404, { error: "Refund request not found." });
@@ -177,22 +225,37 @@ function decideRefundRequest({ requestId, status, adminNote, admin }) {
             });
         } else {
             await notify(connection, {
-                to: "Customer", id: request.customer_id, type: "RefundRejected",
+                to: "Customer",
+                id: request.customer_id,
+                type: "RefundRejected",
                 title: "Refund request rejected",
                 message: `Your refund request #${request.id} for $${money(request.amount).toFixed(2)} was rejected.${adminNote ? " Note: " + adminNote : ""}`,
                 paymentId: request.payment_id
             });
         }
 
-        await repository.decideRequest(connection, [status, adminNote ?? null, admin.id, refund?.refund_id ?? null, requestId]);
+        await repository.decideRequest(connection, [
+            status,
+            adminNote ?? null,
+            admin.id,
+            refund?.refund_id ?? null,
+            requestId
+        ]);
 
-        await logAudit(connection, admin, `REFUND_REQUEST_${status.toUpperCase()}`, "refund_request", requestId, {
-            payment_id: request.payment_id,
-            customer_id: request.customer_id,
-            amount: money(request.amount),
-            admin_note: adminNote ?? null,
-            refund_id: refund?.refund_id ?? null
-        });
+        await logAudit(
+            connection,
+            admin,
+            `REFUND_REQUEST_${status.toUpperCase()}`,
+            "refund_request",
+            requestId,
+            {
+                payment_id: request.payment_id,
+                customer_id: request.customer_id,
+                amount: money(request.amount),
+                admin_note: adminNote ?? null,
+                refund_id: refund?.refund_id ?? null
+            }
+        );
 
         return {
             message: `Refund request ${status.toLowerCase()}${refund ? "; simulated refund recorded, no real money was transferred" : ""}.`,
@@ -205,16 +268,37 @@ function decideRefundRequest({ requestId, status, adminNote, admin }) {
 }
 
 async function recordRefund({ paymentId, amount, reason }, actor, requestKey = null) {
-    return financialTransaction(actor, requestKey, "admin-refund",
-        { paymentId, amount, reason: reason ?? null }, async connection => {
-        const created = await applyRefund(connection, { paymentId, amount, reason });
+    return financialTransaction(
+        actor,
+        requestKey,
+        "admin-refund",
+        { paymentId, amount, reason: reason ?? null },
+        async (connection) => {
+            const created = await applyRefund(connection, { paymentId, amount, reason });
 
-        await logAudit(connection, actor, "REFUND_RECORDED_BY_ADMIN", "refund", created.refund_id, {
-            payment_id: paymentId, amount: created.amount, reason
-        });
+            await logAudit(
+                connection,
+                actor,
+                "REFUND_RECORDED_BY_ADMIN",
+                "refund",
+                created.refund_id,
+                {
+                    payment_id: paymentId,
+                    amount: created.amount,
+                    reason
+                }
+            );
 
-        return created;
-    });
+            return created;
+        }
+    );
 }
 
-module.exports = { recordRefund, applyRefund, listRefunds, createRefundRequest, listRefundRequests, decideRefundRequest };
+module.exports = {
+    recordRefund,
+    applyRefund,
+    listRefunds,
+    createRefundRequest,
+    listRefundRequests,
+    decideRefundRequest
+};

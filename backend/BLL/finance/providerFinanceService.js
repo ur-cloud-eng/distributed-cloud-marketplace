@@ -5,6 +5,7 @@ const { HttpError, money, sumMoney } = require("../../utils/util");
 const { bad, optionalText, positiveAmount, withCurrency } = require("../../utils/helpers");
 const { lockProviders } = require("../../DAL/finance/locks");
 const { financialTransaction } = require("./financialTransaction");
+const { notify, notifyAdmins } = require("./notificationService");
 
 // Earnings
 async function getEarnings(providerId = null) {
@@ -13,23 +14,26 @@ async function getEarnings(providerId = null) {
 }
 
 async function getEarningsForProvider(providerId) {
-    return (await getEarnings(providerId))[0] || withCurrency({
-        provider_id: providerId,
-        gross_earnings: 0,
-        platform_commission: 0,
-        net_earnings: 0,
-        committed_withdrawals: 0,
-        available_balance: 0
-    });
+    return (
+        (await getEarnings(providerId))[0] ||
+        withCurrency({
+            provider_id: providerId,
+            gross_earnings: 0,
+            platform_commission: 0,
+            net_earnings: 0,
+            committed_withdrawals: 0,
+            available_balance: 0
+        })
+    );
 }
 
-const listEarningLines = providerId => repository.listEarningLines([providerId]);
+const listEarningLines = (providerId) => repository.listEarningLines([providerId]);
 
 async function providerBalance(conn, providerId, lock = false) {
     const { earned, withdrawn } = await repository.balanceRows(conn, providerId, lock);
 
-    const total = sumMoney(earned.map(row => row.net_amount));
-    const committed = sumMoney(withdrawn.map(row => row.amount));
+    const total = sumMoney(earned.map((row) => row.net_amount));
+    const committed = sumMoney(withdrawn.map((row) => row.amount));
 
     return {
         total,
@@ -47,38 +51,55 @@ async function listWithdrawals(providerId = null) {
 async function createWithdrawal({ providerId, amount, note, requestKey = null }) {
     const value = positiveAmount(amount);
 
-    if (!value)
-        throw bad("Provide a positive withdrawal amount.");
+    if (!value) throw bad("Provide a positive withdrawal amount.");
     const validatedNote = optionalText(note, "Withdrawal note");
 
-    return financialTransaction({ id: providerId, role: "Provider" }, requestKey,
-        "provider-withdrawal", { amount: value, note: validatedNote }, async connection => {
-        await lockProviders(connection, [providerId]);
-        const { available } = await providerBalance(connection, providerId, true);
+    return financialTransaction(
+        { id: providerId, role: "Provider" },
+        requestKey,
+        "provider-withdrawal",
+        { amount: value, note: validatedNote },
+        async (connection) => {
+            await lockProviders(connection, [providerId]);
+            const { available } = await providerBalance(connection, providerId, true);
 
-        if (value > available) {
-            throw new HttpError(400, {
-                error: `Requested $${value.toFixed(2)} exceeds your available balance of $${available.toFixed(2)}.`,
-                available_balance: available
+            if (value > available) {
+                throw new HttpError(400, {
+                    error: `Requested $${value.toFixed(2)} exceeds your available balance of $${available.toFixed(2)}.`,
+                    available_balance: available
+                });
+            }
+
+            const [result] = await repository.insertWithdrawal(connection, [
+                providerId,
+                value,
+                validatedNote
+            ]);
+
+            await notify(connection, {
+                to: "Provider",
+                id: providerId,
+                type: "WithdrawalRequested",
+                title: "Withdrawal requested",
+                message: `Withdrawal #${result.insertId} for $${value.toFixed(2)} is awaiting review.`
             });
+            await notifyAdmins(connection, {
+                notificationType: "WithdrawalRequested",
+                title: "New withdrawal request",
+                message: `Provider #${providerId} requested withdrawal #${result.insertId} for $${value.toFixed(2)}.`
+            });
+
+            return {
+                message: "Withdrawal request created (simulated).",
+                withdrawal_id: result.insertId,
+                provider_id: providerId,
+                amount: value,
+                currency: "USD",
+                status: "Requested",
+                available_balance_after_request: money(available - value)
+            };
         }
-
-        const [result] = await repository.insertWithdrawal(connection, [
-            providerId,
-            value,
-            validatedNote
-        ]);
-
-        return {
-            message: "Withdrawal request created (simulated).",
-            withdrawal_id: result.insertId,
-            provider_id: providerId,
-            amount: value,
-            currency: "USD",
-            status: "Requested",
-            available_balance_after_request: money(available - value)
-        };
-    });
+    );
 }
 
 const NEXT_STATUS = {
@@ -87,14 +108,13 @@ const NEXT_STATUS = {
 };
 
 async function updateWithdrawal(id, status, actor) {
-    return withTransaction(async connection => {
+    return withTransaction(async (connection) => {
         const providerId = await repository.withdrawalOwner(connection, id);
         if (providerId == null) throw new HttpError(404, { error: "Withdrawal not found." });
         await lockProviders(connection, [providerId]);
         const [rows] = await repository.lockWithdrawalRequest(connection, [id]);
 
-        if (!rows.length)
-            throw new HttpError(404, { error: "Withdrawal not found." });
+        if (!rows.length) throw new HttpError(404, { error: "Withdrawal not found." });
 
         const old = rows[0].status;
 
@@ -103,18 +123,19 @@ async function updateWithdrawal(id, status, actor) {
 
         await repository.updateWithdrawalStatus(connection, [status, id]);
 
-        await logAudit(
-            connection,
-            actor,
-            `WITHDRAWAL_${status.toUpperCase()}`,
-            "withdrawal",
-            id,
-            {
-                provider_id: rows[0].provider_id,
-                amount: money(rows[0].amount),
-                previous_status: old
-            }
-        );
+        await logAudit(connection, actor, `WITHDRAWAL_${status.toUpperCase()}`, "withdrawal", id, {
+            provider_id: rows[0].provider_id,
+            amount: money(rows[0].amount),
+            previous_status: old
+        });
+
+        await notify(connection, {
+            to: "Provider",
+            id: providerId,
+            type: `Withdrawal${status}`,
+            title: `Withdrawal ${status.toLowerCase()}`,
+            message: `Withdrawal #${id} for $${money(rows[0].amount).toFixed(2)} is now ${status.toLowerCase()} (simulated).`
+        });
 
         return {
             message: "Withdrawal status updated (simulated).",

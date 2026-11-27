@@ -3,7 +3,16 @@ const { money } = require("../../utils/util");
 const repository = require("../../DAL/finance/dashboard");
 
 async function getDashboard() {
-    const { invoices, payments, refunds, earnings, withdrawals, discounts, notifications, requests } = await repository.dashboardTotals();
+    const {
+        invoices,
+        payments,
+        refunds,
+        earnings,
+        withdrawals,
+        discounts,
+        notifications,
+        requests
+    } = await repository.dashboardTotals();
 
     return {
         currency: "USD",
@@ -38,4 +47,4 @@ async function getDashboard() {
     };
 }
 
-module.exports = { getDashboard, listAudit: filters => audit.listAudit(filters) };
+module.exports = { getDashboard, listAudit: (filters) => audit.listAudit(filters) };

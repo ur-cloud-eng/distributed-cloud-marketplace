@@ -1,10 +1,7 @@
-
 const crypto = require("crypto");
 
 function hashVerificationToken(token) {
-    return crypto.createHash("sha256")
-        .update(token)
-        .digest("hex");
+    return crypto.createHash("sha256").update(token).digest("hex");
 }
 
 function createVerificationToken() {
@@ -19,4 +16,3 @@ module.exports = {
     createVerificationToken,
     hashVerificationToken
 };
-

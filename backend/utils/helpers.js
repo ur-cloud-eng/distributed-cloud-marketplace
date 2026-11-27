@@ -3,16 +3,13 @@ const crypto = require("crypto");
 const { HttpError, money, positiveInteger } = require("./util");
 
 const bad = (message, extra = {}) => new HttpError(400, { error: message, ...extra });
-const notFound = message => new HttpError(404, { error: message });
+const notFound = (message) => new HttpError(404, { error: message });
 
-const makeRef = prefix =>
+const makeRef = (prefix) =>
     `${prefix}-${Date.now()}-${crypto.randomBytes(3).toString("hex").toUpperCase()}`;
 
-const cleanText = (value, max = 255) =>
-    value == null ? null : String(value).trim().slice(0, max);
-
 // Positive money amount, or null when missing / not a number / not > 0
-const positiveAmount = value => {
+const positiveAmount = (value) => {
     if (typeof value !== "number") return null;
     const n = value;
     if (Math.abs(n * 100 - Math.round(n * 100)) > 0.000001) return null;
@@ -30,7 +27,9 @@ function optionalText(value, name, max = 255) {
 function idempotencyKey(value) {
     if (value == null) return null;
     if (typeof value !== "string" || !/^[\x21-\x7e]{1,128}$/.test(value))
-        throw bad("Idempotency-Key must contain 1 to 128 printable ASCII characters without spaces.");
+        throw bad(
+            "Idempotency-Key must contain 1 to 128 printable ASCII characters without spaces."
+        );
     return value;
 }
 
@@ -42,9 +41,15 @@ const optionalId = (value, name) => {
     return id;
 };
 
-const withCurrency = row => ({ ...row, currency: "USD" });
+const withCurrency = (row) => ({ ...row, currency: "USD" });
 
 module.exports = {
-    bad, notFound, makeRef, cleanText, positiveAmount,
-    optionalId, optionalText, idempotencyKey, withCurrency
+    bad,
+    notFound,
+    makeRef,
+    positiveAmount,
+    optionalId,
+    optionalText,
+    idempotencyKey,
+    withCurrency
 };

@@ -1,4 +1,3 @@
-
 const dal = require("../../DAL/auth/twoFactorDAL");
 const { createTwoFactorSetup, verifyTwoFactorCode } = require("./twoFactorService");
 
@@ -16,31 +15,20 @@ async function startTwoFactorEnrollment(userId) {
         // Lock and check the user's account
         const [users] = await dal.lockUserForEnrollment(connection, [userId]);
 
-        if (users.length === 0)
-            throw new Error("User not found");
+        if (users.length === 0) throw new Error("User not found");
 
-        if (!users[0].email_verified_at)
-            throw new Error("Verify your email first");
+        if (!users[0].email_verified_at) throw new Error("Verify your email first");
 
         // Check whether 2FA is already enabled
         const [existing] = await dal.lockEnrollmentStatus(connection, [userId]);
 
-        if (existing.length && existing[0].enabled_at)
-            throw new Error("2FA is already enabled");
+        if (existing.length && existing[0].enabled_at) throw new Error("2FA is already enabled");
 
         // Generate the secret and QR code
-        const setup = await createTwoFactorSetup(
-            userId,
-            users[0].email
-        );
+        const setup = await createTwoFactorSetup(userId, users[0].email);
 
         // Save encrypted secret to MySQL
-        if (existing.length === 0) {
-            await dal.insertEnrollment(connection, [userId, setup.encryptedSecret]);
-        } else {
-            // Replace a previous unfinished enrollment
-            await dal.replaceEnrollment(connection, [setup.encryptedSecret, userId]);
-        }
+        await dal.saveEnrollment(connection, [setup.encryptedSecret, userId]);
 
         await dal.commit(connection);
 
@@ -48,7 +36,6 @@ async function startTwoFactorEnrollment(userId) {
             qrCode: setup.qrCode,
             manualKey: setup.manualKey
         };
-
     } catch (error) {
         await dal.rollback(connection);
         throw error;
@@ -56,7 +43,6 @@ async function startTwoFactorEnrollment(userId) {
         dal.release(connection);
     }
 }
-
 
 async function confirmTwoFactorEnrollment(userId, code) {
     if (!Number.isSafeInteger(userId) || userId <= 0) {
@@ -106,7 +92,6 @@ async function confirmTwoFactorEnrollment(userId, code) {
             success: true,
             message: "Two-factor authentication enabled"
         };
-
     } catch (error) {
         await dal.rollback(connection);
         throw error;
@@ -114,7 +99,6 @@ async function confirmTwoFactorEnrollment(userId, code) {
         dal.release(connection);
     }
 }
-
 
 async function verifyLoginTwoFactor(userId, code) {
     if (!Number.isSafeInteger(userId) || userId <= 0) {
@@ -154,7 +138,11 @@ async function verifyLoginTwoFactor(userId, code) {
         }
 
         // Prevent replay of previously accepted codes
-        const [update] = await dal.consumeTimeStep(connection, [result.timeStep, userId, result.timeStep]);
+        const [update] = await dal.consumeTimeStep(connection, [
+            result.timeStep,
+            userId,
+            result.timeStep
+        ]);
 
         if (update.affectedRows !== 1) {
             await dal.rollback(connection);
@@ -164,7 +152,6 @@ async function verifyLoginTwoFactor(userId, code) {
         await dal.commit(connection);
 
         return { valid: true };
-
     } catch (error) {
         await dal.rollback(connection);
         throw error;
@@ -172,7 +159,6 @@ async function verifyLoginTwoFactor(userId, code) {
         dal.release(connection);
     }
 }
-
 
 module.exports = {
     startTwoFactorEnrollment,

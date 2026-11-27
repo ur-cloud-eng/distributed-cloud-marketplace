@@ -1,21 +1,30 @@
 const { withReadSnapshot } = require("../dbconn");
 // Data Access Layer: SQL statements for finance.
 
-
 // COALESCE(SUM(CASE WHEN cond THEN col ELSE 0 END), 0)
-const sum = (col, cond = "1=1") =>
-    `COALESCE(SUM(CASE WHEN ${cond} THEN ${col} ELSE 0 END), 0)`;
+const sum = (col, cond = "1=1") => `COALESCE(SUM(CASE WHEN ${cond} THEN ${col} ELSE 0 END), 0)`;
 
 // Run a single-row query and convert every column to a number
 async function dashboardTotals() {
-    return withReadSnapshot(async connection => {
-    const one = async sql => Object.fromEntries(
-        Object.entries((await connection.execute(sql))[0][0])
-            .map(([key, value]) => [key, Number(value)])
-    );
+    return withReadSnapshot(async (connection) => {
+        const one = async (sql) =>
+            Object.fromEntries(
+                Object.entries((await connection.execute(sql))[0][0]).map(([key, value]) => [
+                    key,
+                    Number(value)
+                ])
+            );
 
-    const [invoices, payments, refunds, earnings, withdrawals, discounts, notifications, requests] =
-        await Promise.all([
+        const [
+            invoices,
+            payments,
+            refunds,
+            earnings,
+            withdrawals,
+            discounts,
+            notifications,
+            requests
+        ] = await Promise.all([
             one(`SELECT COUNT(*) AS count, ${sum("total")} AS total,
                  ${sum("total", "status = 'Paid'")} AS paid,
                  ${sum("total", "status = 'Unpaid'")} AS unpaid FROM invoices`),
@@ -34,7 +43,9 @@ async function dashboardTotals() {
                  ${sum("1", "status = 'Requested'")} AS review,
                  ${sum("amount", "status = 'Paid'")} AS paid FROM withdrawal_requests`),
 
-            one(`SELECT COUNT(*) AS count, ${sum("used_count")} AS redemptions FROM discount_codes`),
+            one(
+                `SELECT COUNT(*) AS count, ${sum("used_count")} AS redemptions FROM discount_codes`
+            ),
 
             one(`SELECT COUNT(*) AS count,
                  ${sum("1", "read_at IS NULL")} AS unread
@@ -45,7 +56,16 @@ async function dashboardTotals() {
                  ${sum("amount", "status = 'Pending'")} AS total FROM refund_requests`)
         ]);
 
-    return { invoices, payments, refunds, earnings, withdrawals, discounts, notifications, requests };
+        return {
+            invoices,
+            payments,
+            refunds,
+            earnings,
+            withdrawals,
+            discounts,
+            notifications,
+            requests
+        };
     });
 }
 

@@ -1,5 +1,4 @@
-const db = require("../dbconn");
-const transaction = require('../transaction');
+const transaction = require("../transaction");
 
 async function lockUserForEnrollment(connection, parameters) {
     return connection.execute(
@@ -12,28 +11,20 @@ async function lockUserForEnrollment(connection, parameters) {
 
 async function lockEnrollmentStatus(connection, parameters) {
     return connection.execute(
-        `SELECT enabled_at
-             FROM UserTwoFactor
-             WHERE user_id = ? FOR UPDATE`,
+        `SELECT totp_enabled_at AS enabled_at
+             FROM Users
+             WHERE user_id = ? AND totp_encrypted_secret IS NOT NULL FOR UPDATE`,
         parameters
     );
 }
 
-async function insertEnrollment(connection, parameters) {
+async function saveEnrollment(connection, parameters) {
     return connection.execute(
-        `INSERT INTO UserTwoFactor
-                 (user_id, encrypted_secret, enabled_at, last_used_step)
-                 VALUES (?, ?, NULL, NULL)`,
-        parameters
-    );
-}
-
-async function replaceEnrollment(connection, parameters) {
-    return connection.execute(
-        `UPDATE UserTwoFactor
-                 SET encrypted_secret = ?,
-                     enabled_at = NULL,
-                     last_used_step = NULL
+        `UPDATE Users
+                 SET totp_encrypted_secret = ?,
+                     totp_enabled_at = NULL,
+                     totp_last_used_step = NULL,
+                     totp_created_at = COALESCE(totp_created_at, UTC_TIMESTAMP())
                  WHERE user_id = ?`,
         parameters
     );
@@ -41,18 +32,19 @@ async function replaceEnrollment(connection, parameters) {
 
 async function lockEnrollmentForConfirmation(connection, parameters) {
     return connection.execute(
-        `SELECT encrypted_secret, enabled_at, last_used_step
-             FROM UserTwoFactor
-             WHERE user_id = ? FOR UPDATE`,
+        `SELECT totp_encrypted_secret AS encrypted_secret,
+                    totp_enabled_at AS enabled_at, totp_last_used_step AS last_used_step
+             FROM Users
+             WHERE user_id = ? AND totp_encrypted_secret IS NOT NULL FOR UPDATE`,
         parameters
     );
 }
 
 async function enableEnrollment(connection, parameters) {
     return connection.execute(
-        `UPDATE UserTwoFactor
-             SET enabled_at = UTC_TIMESTAMP(),
-                 last_used_step = ?
+        `UPDATE Users
+             SET totp_enabled_at = UTC_TIMESTAMP(),
+                 totp_last_used_step = ?
              WHERE user_id = ?`,
         parameters
     );
@@ -60,21 +52,31 @@ async function enableEnrollment(connection, parameters) {
 
 async function lockEnrollmentForLogin(connection, parameters) {
     return connection.execute(
-        `SELECT encrypted_secret, enabled_at, last_used_step
-             FROM UserTwoFactor
-             WHERE user_id = ? FOR UPDATE`,
+        `SELECT totp_encrypted_secret AS encrypted_secret,
+                    totp_enabled_at AS enabled_at, totp_last_used_step AS last_used_step
+             FROM Users
+             WHERE user_id = ? AND totp_encrypted_secret IS NOT NULL FOR UPDATE`,
         parameters
     );
 }
 
 async function consumeTimeStep(connection, parameters) {
     return connection.execute(
-        `UPDATE UserTwoFactor
-             SET last_used_step = ?
+        `UPDATE Users
+             SET totp_last_used_step = ?
              WHERE user_id = ?
-               AND (last_used_step IS NULL OR last_used_step < ?)`,
+               AND (totp_last_used_step IS NULL OR totp_last_used_step < ?)`,
         parameters
     );
 }
 
-module.exports = { ...transaction, lockUserForEnrollment, lockEnrollmentStatus, insertEnrollment, replaceEnrollment, lockEnrollmentForConfirmation, enableEnrollment, lockEnrollmentForLogin, consumeTimeStep };
+module.exports = {
+    ...transaction,
+    lockUserForEnrollment,
+    lockEnrollmentStatus,
+    saveEnrollment,
+    lockEnrollmentForConfirmation,
+    enableEnrollment,
+    lockEnrollmentForLogin,
+    consumeTimeStep
+};
