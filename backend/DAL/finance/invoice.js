@@ -1,0 +1,141 @@
+const { where } = require("../query");
+// Data Access Layer: SQL statements for invoiceService.
+const db = require("../dbconn");
+
+const findCustomer = (connection = db, customerId) =>
+    connection.execute("SELECT user_id, role FROM Users WHERE user_id = ? LIMIT 1 FOR UPDATE", [
+        customerId
+    ]);
+
+const findProviders = (connection = db, ids) =>
+    connection.execute(
+        `SELECT user_id FROM Users WHERE role = 'provider' AND user_id IN (${ids.map(() => "?").join(",")})`,
+        ids
+    );
+
+const listItems = (connection = db, params = []) =>
+    connection.execute(
+        `
+        SELECT provider_id, resource_type, cloud_class, quantity, unit_price, line_total
+        FROM invoice_items WHERE invoice_id = ? ORDER BY id
+    `,
+        params
+    );
+
+const insertItem = (connection = db, params = []) =>
+    connection.execute(
+        `
+            INSERT INTO invoice_items
+            (invoice_id, provider_id, resource_type, cloud_class, quantity, unit_price, line_total)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        `,
+        params
+    );
+
+const insertInvoice = (connection = db, params = []) =>
+    connection.execute(
+        `
+        INSERT INTO invoices
+        (invoice_number, billing_period_id, status, subtotal, total, discount_code_id, discount_amount)
+        VALUES (?, ?, 'Unpaid', ?, ?, ?, ?)
+    `,
+        params
+    );
+
+const redeemDiscount = (connection = db, params = []) =>
+    connection.execute(
+        `
+            UPDATE discount_codes SET used_count = used_count + 1
+            WHERE id = ? AND (max_uses IS NULL OR used_count < max_uses)
+        `,
+        params
+    );
+
+const insertBillingPeriod = (connection = db, params = []) =>
+    connection.execute(
+        `
+                INSERT INTO billing_periods (customer_id, period_start, period_end) VALUES (?, ?, ?)
+            `,
+        params
+    );
+
+const lockBillingPeriod = (connection = db, params = []) =>
+    connection.execute(
+        `
+        SELECT bp.id, bp.period_start, bp.period_end, i.id AS invoice_id, i.invoice_number
+        FROM billing_periods bp LEFT JOIN invoices i ON i.billing_period_id = bp.id
+        WHERE bp.customer_id = ? AND bp.period_end > ? AND bp.period_start < ?
+        FOR UPDATE
+    `,
+        params
+    );
+
+const listActivePrices = (connection = db, params = []) =>
+    connection.execute(
+        "SELECT resource_type, cloud_class, unit_price FROM pricing_rules WHERE active = TRUE",
+        params
+    );
+
+async function listInvoices(db, customerId = null) {
+    const w = where({ "bp.customer_id": customerId });
+
+    const [rows] = await db.execute(
+        `
+        SELECT ${columns}
+        FROM invoices i
+        JOIN billing_periods bp ON bp.id = i.billing_period_id
+        ${w.sql}
+        ORDER BY i.created_at DESC, i.id DESC
+    `,
+        w.params
+    );
+
+    return rows;
+}
+
+const columns = `i.id, i.invoice_number, bp.customer_id, bp.period_start, bp.period_end, i.status, i.subtotal, i.discount_amount, i.discount_code_id, i.total, i.created_at`;
+
+async function findInvoice(db, id, customerId) {
+    const w = where({ "i.id": id, "bp.customer_id": customerId });
+    const [[invoice]] = await db.execute(
+        `SELECT ${columns} FROM invoices i JOIN billing_periods bp ON bp.id = i.billing_period_id ${w.sql}`,
+        w.params
+    );
+    return invoice || null;
+}
+
+const lockInvoice = (connection, id) =>
+    connection.execute(
+        `
+    SELECT i.id, i.invoice_number, i.status, bp.customer_id
+    FROM invoices i JOIN billing_periods bp ON bp.id = i.billing_period_id
+    WHERE i.id = ? FOR UPDATE
+`,
+        [id]
+    );
+
+const paymentExists = (connection, id) =>
+    connection.execute("SELECT id FROM payments WHERE invoice_id = ? LIMIT 1", [id]);
+
+const cancelInvoice = (connection, id) =>
+    connection.execute(
+        "UPDATE invoices SET status = 'Cancelled' WHERE id = ? AND status = 'Unpaid'",
+        [id]
+    );
+
+module.exports = {
+    findProviders,
+    lockInvoice,
+    paymentExists,
+    cancelInvoice,
+    findCustomer,
+    findInvoice,
+    listInvoices,
+    listItems,
+    insertItem,
+    insertInvoice,
+    redeemDiscount,
+    insertBillingPeriod,
+    lockBillingPeriod,
+    listActivePrices
+};

@@ -1,0 +1,4 @@
+<%- include('../partials/filters') %>
+<%- include('../partials/table', { caption: title, columns }) %>
+<% if (title === 'Resource Groups') { %><p class="muted spaced">A resource group can only be deleted once it is empty.</p><% } %>
+

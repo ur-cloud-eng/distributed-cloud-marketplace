@@ -1,0 +1,6 @@
+<form method="post" class="live-form" data-path="<%= form.path %>" data-method="<%= form.method %>" data-fixed="<%= JSON.stringify(form.fixed || {}) %>">
+<div class="live-fields"><% for(const f of form.fields) { %><label><span><%= f.label %></span>
+<% if(f.type === 'select') { %><select name="<%= f.name %>" <%= f.optional ? '' : 'required' %>><option value="">Select</option><% for(const option of f.options) { %><option value="<%= option %>"><%= option %></option><% } %></select>
+<% } else if(f.type === 'textarea') { %><textarea name="<%= f.name %>" rows="5" minlength="10" maxlength="4000" required></textarea>
+<% } else { %><input name="<%= f.name %>" type="<%= f.type %>" <%= f.optional ? '' : 'required' %> <% if(f.type==='number') { %>min="0" step="any"<% } %> <% if(f.name==='code' && form.path.includes('2fa')) { %>pattern="[0-9]{6}" inputmode="numeric" maxlength="6"<% } %> <% if(f.type==='password') { %>autocomplete="<%= form.path.endsWith('register') ? 'new-password' : 'current-password' %>"<% } %> > <% } %></label><% } %></div>
+<button type="submit" class="primary"><%= form.title %></button><div class="form-result" role="status" aria-live="polite"></div></form>

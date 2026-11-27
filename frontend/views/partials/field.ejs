@@ -1,0 +1,24 @@
+<% const id = 'field-' + field.key; %>
+<% if (field.kind === 'radio') { %>
+<fieldset class="choice-field"><legend><%= field.label %></legend><div class="choices">
+<% for (const option of field.options) { %><label><input type="radio" name="<%= field.key %>" value="<%= option %>" <%= field.required ? 'required' : '' %> aria-describedby="<%= id %>-error"><span><%= option %></span></label><% } %>
+</div><p id="<%= id %>-error" class="field-error" aria-live="polite"></p></fieldset>
+<% } else { %>
+<div class="form-field"><label for="<%= id %>"><%= field.label %></label><div class="input-wrap">
+<% if (field.kind === 'select') { %>
+<select id="<%= id %>" name="<%= field.key %>" <%= field.required ? 'required' : '' %> <%= field.unavailable ? 'disabled' : '' %> aria-describedby="<%= id %>-help <%= id %>-error">
+<option value=""><%= field.unavailable || 'Select an option' %></option><% for (const option of field.options || []) { %><option><%= option %></option><% } %>
+</select>
+<% } else { %>
+<input id="<%= id %>" name="<%= field.key %>" type="<%= field.kind %>"
+<% if (field.autocomplete) { %>autocomplete="<%= field.autocomplete %>"<% } %>
+<% if (field.min) { %>min="<%= field.min %>" step="1"<% } %>
+<% if (field.rule) { %>data-rule="<%= field.rule %>"<% } %>
+<% if (field.rule === 'totp') { %>inputmode="numeric" maxlength="6" class="code-input"<% } %>
+<%= field.required ? 'required' : '' %> <%= field.unavailable ? 'disabled' : '' %>
+placeholder="<%= field.unavailable || '' %>" aria-describedby="<%= id %>-help <%= id %>-error">
+<% if (field.kind === 'password') { %><button type="button" data-toggle="<%= id %>" aria-controls="<%= id %>" aria-label="Show <%= field.label.toLowerCase() %>" hidden>Show</button><% } %>
+<% } %>
+</div><p class="muted small" id="<%= id %>-help"><%= field.help || '' %></p><p class="field-error" id="<%= id %>-error" aria-live="polite"></p></div>
+<% } %>
+

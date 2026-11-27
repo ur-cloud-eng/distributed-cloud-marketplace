@@ -1,0 +1,7 @@
+<nav class="tabs" aria-label="Infrastructure views" data-tabs>
+<a href="?tab=resources" data-tab="resources" aria-current="page">Customer resources</a><a href="?tab=hosts" data-tab="hosts">Provider hosts</a></nav>
+<div data-panel="resources"><p class="notice">Customer resources are simulated and owned by customers. Provider hosts are the registered capacity they run on.</p>
+<%- include('../partials/filters', { filters: ['Type','Status'] }) %>
+<%- include('../partials/table', { caption: 'Customer resources', columns: ['Name','Type','Owner','Region','State','Created'] }) %></div>
+<div data-panel="hosts" hidden><%- include('../partials/table', { caption: 'Provider hosts', columns: ['Host','Provider','Region','Class','Status','vCPU used','RAM used','Disk used'] }) %></div>
+

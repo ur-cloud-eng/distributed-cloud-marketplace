@@ -1,0 +1,7 @@
+<%- include('head') %>
+<header class="navbar live-navbar"><a class="brand" href="<%= base %>">CortexOps</a><span class="portal-label"><%= role %> portal</span><nav class="live-nav" aria-label="Portal navigation"><% for(const [label,suffix] of navigation) { %><a href="<%= base+suffix %>" <% if(currentPath===base+suffix) { %>aria-current="page"<% } %>><%= label %></a><% } %></nav><button type="button" id="logout">Sign out</button></header>
+<main id="main" class="page live-page"><div class="page-heading"><div><h1><%= title %></h1><p class="muted"><%= config.description %></p></div><button id="refresh" type="button">Refresh data</button></div>
+<% if(config.links.length) { %><div class="live-links"><% for(const [label,url] of config.links) { %><a class="button" href="<%= base+url %>"><%= label %></a><% } %></div><% } %>
+<% for(const table of config.tables) { %><section><h2><%= table.title %></h2><div class="live-data panel" data-source="<%= table.path %>" data-key="<%= table.key || '' %>" data-fields="<%= JSON.stringify(table.fields || []) %>" aria-live="polite">Loading…</div></section><% } %>
+<% if(config.forms.length) { %><section><h2>Actions</h2><p class="muted">Use the record IDs shown in the tables or returned by lookup actions.</p><div class="action-grid"><% for(const form of config.forms) { %><details class="panel" <%= config.forms.length===1 ? 'open' : '' %>><summary><%= form.title %></summary><%- include('form',{form}) %></details><% } %></div></section><% } %>
+</main></body></html>
