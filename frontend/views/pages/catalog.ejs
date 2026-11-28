@@ -1,7 +1,0 @@
-<% for (const category of ['Organization','Networking','Compute','Storage','Databases','Applications']) { %>
-<section class="catalog-section" aria-label="<%= category %>"><h2><%= category %></h2><div class="catalog-grid">
-<% for (const type of resourceTypes.filter(item => item.category === category)) { %>
-<article class="catalog-card"><div><h3><%= type.label %></h3><p class="muted"><%= type.description %></p><p class="small">Requires: <%= type.prerequisites.join(', ') %></p></div>
-<a class="button" href="<%= base %>/resources/create/<%= type.slug %>" aria-label="Select <%= type.label %>">Select</a></article>
-<% } %></div></section><% } %>
-

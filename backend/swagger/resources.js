@@ -85,10 +85,7 @@ add(
 );
 const compute = { name, hostingClass: hostFields.hostingClass, vcpu: num, ramGb: num, diskGb: num };
 const base = "/api/resource-groups/{groupId}";
-function allocated(path, label, fields, required) {
-    add(path, label, fields, required);
-}
-allocated(
+add(
     base + "/storage/{type}",
     "storage",
     { name, hostingClass: hostFields.hostingClass, sizeGb: num },
@@ -97,12 +94,13 @@ allocated(
 const storagePath = base + "/storage/{type}";
 for (const path of [storagePath, storagePath + "/{id}"])
     for (const op of Object.values(paths[path])) {
+        op.description = "The blob and file paths only access their specified storage type. List and detail responses retain the corresponding blob_id or file_id.";
         op.parameters.find((p) => p.name === "type").schema = {
             type: "string",
             enum: ["blob", "file"]
         };
     }
-allocated(
+add(
     base + "/databases",
     "managed databases",
     {
@@ -115,13 +113,13 @@ allocated(
     },
     ["name", "hostingClass", "vcpu", "ramGb", "sizeGb", "engine"]
 );
-allocated(
+add(
     base + "/web-apps",
     "web apps",
     { ...compute, databaseId: { ...num, nullable: true } },
     Object.keys(compute)
 );
-allocated(
+add(
     base + "/load-balancers",
     "load balancers",
     {
@@ -131,10 +129,4 @@ allocated(
     },
     [...Object.keys(compute), "vnetId"]
 );
-const target = base + "/load-balancers/{id}/targets";
-paths[target] = {
-    get: operation(target, "List load balancer targets"),
-    post: operation(target, "Add VM target", 201, { vmId: num }, ["vmId"])
-};
-paths[target + "/{vmId}"] = { delete: operation(target + "/{vmId}", "Remove VM target") };
 module.exports = paths;

@@ -12,7 +12,7 @@ module.exports = {
         },
         post: {
             tags: ["Pricing"],
-            summary: "Create a pricing rule",
+            summary: "Create or reactivate a pricing rule (Admin)",
             requestBody: {
                 required: true,
                 content: {
@@ -41,7 +41,7 @@ module.exports = {
             tags: ["Pricing"],
             summary: "Calculate monthly and hourly resource price estimates",
             description:
-                "Estimates full allocation at active monthly rates. Invoices use actual metered usage and rates active at invoice generation. VM storage metering is a separate pending integration.",
+                "Estimates full allocation at active monthly rates. Invoices use actual metered usage and rates active at invoice generation. Stored invoice line prices are unaffected by later price changes. Only positive quantities require active pricing rules. Unused categories contribute zero, and missing rates are omitted from unit_prices.",
             requestBody: {
                 required: true,
                 content: {
@@ -55,18 +55,19 @@ module.exports = {
             responses: {
                 200: {
                     description:
-                        "Calculated estimate with estimated_monthly_price, estimated_hourly_price, hours_per_month, currency and breakdown"
+                        "Calculated estimate with estimated_monthly_price, estimated_hourly_price, hours_per_month, currency and price_breakdown"
                 },
                 400: {
                     description: "Invalid input"
-                }
+                },
+                409: { description: "Pricing rule missing or invalid for a requested resource" }
             }
         }
     },
     "/api/pricing/{id}": {
         delete: {
             tags: ["Pricing"],
-            summary: "Deactivate pricing rule (preserves price history)",
+            summary: "Retire an active pricing rule (Admin)",
             parameters: [
                 { name: "id", in: "path", required: true, schema: { type: "integer", minimum: 1 } }
             ],
@@ -77,7 +78,7 @@ module.exports = {
         },
         put: {
             tags: ["Pricing"],
-            summary: "Update a pricing rule",
+            summary: "Update a pricing rule (Admin)",
             parameters: [
                 {
                     name: "id",
@@ -99,7 +100,9 @@ module.exports = {
                             properties: {
                                 unit_price: {
                                     type: "number",
-                                    minimum: 0
+                                    minimum: 0,
+                                    maximum: 99999999.99,
+                                    multipleOf: 0.01
                                 }
                             }
                         }
@@ -112,31 +115,6 @@ module.exports = {
                 },
                 400: {
                     description: "Invalid input"
-                },
-                404: {
-                    description: "Rule not found"
-                }
-            }
-        }
-    },
-    "/api/pricing/{id}/history": {
-        get: {
-            tags: ["Pricing"],
-            summary: "Get pricing history",
-            parameters: [
-                {
-                    name: "id",
-                    in: "path",
-                    required: true,
-                    schema: {
-                        type: "integer",
-                        minimum: 1
-                    }
-                }
-            ],
-            responses: {
-                200: {
-                    description: "Pricing history"
                 },
                 404: {
                     description: "Rule not found"

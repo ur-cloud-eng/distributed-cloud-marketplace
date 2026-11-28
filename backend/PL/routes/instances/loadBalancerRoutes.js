@@ -26,38 +26,4 @@ router.delete(
         res.json(await service.remove(req.user.id, requiredId(req.params.groupId), requiredId(req.params.id)))
     )
 );
-router.get(
-    "/:id/targets",
-    handle(async (req, res) =>
-        res.json(await service.targets(req.user.id, requiredId(req.params.groupId), requiredId(req.params.id)))
-    )
-);
-router.post(
-    "/:id/targets",
-    handle(async (req, res) =>
-        res
-            .status(201)
-            .json(
-                await service.addTarget(
-                    req.user.id,
-                    requiredId(req.params.groupId),
-                    requiredId(req.params.id),
-                    requiredId(req.body.vmId)
-                )
-            )
-    )
-);
-router.delete(
-    "/:id/targets/:vmId",
-    handle(async (req, res) =>
-        res.json(
-            await service.removeTarget(
-                req.user.id,
-                requiredId(req.params.groupId),
-                requiredId(req.params.id),
-                requiredId(req.params.vmId)
-            )
-        )
-    )
-);
 module.exports = router;

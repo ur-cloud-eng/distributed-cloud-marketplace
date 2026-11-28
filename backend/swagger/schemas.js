@@ -14,7 +14,9 @@ module.exports = {
             },
             unit_price: {
                 type: "number",
-                minimum: 0
+                minimum: 0,
+                maximum: 99999999.99,
+                multipleOf: 0.01
             }
         }
     },

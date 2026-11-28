@@ -4,9 +4,7 @@ const pricing = require("../finance/pricingService");
 
 const { fail, validId, assertId, actorData } = require("./instanceUtils");
 
-const { startInstance, stopInstance, restartInstance } = require("./lifecycleService");
-
-const { assignIP, releaseIP } = require("./ipService");
+const { startInstance, stopInstance } = require("./lifecycleService");
 
 async function getCustomerInstances(customerId) {
     assertId(customerId, "customer ID");
@@ -70,9 +68,7 @@ async function createInstance(customerId, data) {
             if (
                 [
                     "Insufficient provider capacity",
-                    "Insufficient reserved host capacity",
                     "Host unavailable, unverified or class mismatch",
-                    "Host missing, unverified, or unavailable",
                     "Provider host not found"
                 ].includes(error.message)
             )
@@ -81,8 +77,7 @@ async function createInstance(customerId, data) {
                 [
                     "Invalid VM specification",
                     "Subnet or resource group not found",
-                    "Region mismatch or customer unverified",
-                    "Invalid customer, subnet or region"
+                    "Region mismatch or customer unverified"
                 ].includes(error.message)
             )
                 fail(400, error.message);
@@ -104,24 +99,13 @@ async function getInstanceById(vmId, actor) {
     return instance;
 }
 
-async function getActivityHistory(vmId, actor) {
-    await getInstanceById(vmId, actor);
-
-    const { customerId, isAdmin } = actorData(actor);
-
-    return dal.getActivityHistory(vmId, customerId, isAdmin);
-}
-
 async function deleteInstance(vmId, actor) {
     const instance = await getInstanceById(vmId, actor);
 
     try {
         await cancelResource(instance.resource_id, actor.id);
     } catch (error) {
-        if (
-            error.message === "Remove VM from load balancers first" ||
-            error.message === "Resource already cancelled"
-        )
+        if (error.message === "Resource already cancelled")
             fail(409, error.message);
 
         if (error.message === "Resource not found or actor unauthorized")
@@ -141,11 +125,7 @@ module.exports = {
     getCustomerInstances,
     createInstance,
     getInstanceById,
-    getActivityHistory,
     deleteInstance,
     startInstance,
-    stopInstance,
-    restartInstance,
-    assignIP,
-    releaseIP
+    stopInstance
 };

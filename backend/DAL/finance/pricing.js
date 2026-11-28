@@ -1,16 +1,6 @@
 // Data Access Layer: SQL statements for pricing.
 const db = require("../dbconn");
 
-const listHistory = (params = []) =>
-    db.execute(
-        `
-        SELECT id, pricing_rule_id, old_price, new_price, changed_at
-        FROM pricing_history WHERE pricing_rule_id = ?
-        ORDER BY changed_at DESC, id DESC
-    `,
-        params
-    );
-
 const updatePrice = (connection, params = []) =>
     connection.execute("UPDATE pricing_rules SET unit_price = ? WHERE id = ?", params);
 
@@ -41,12 +31,6 @@ const listActiveRules = (params = []) =>
         params
     );
 
-const insertHistory = (connection, params = []) =>
-    connection.execute(
-        "INSERT INTO pricing_history (pricing_rule_id, old_price, new_price) VALUES (?, ?, ?)",
-        params
-    );
-
 const deactivateRule = (connection, params = []) =>
     connection.execute("UPDATE pricing_rules SET active = FALSE WHERE id = ?", params);
 const lockResourceClass = (connection, params = []) =>
@@ -61,13 +45,11 @@ const reactivateRule = (connection, params = []) =>
     );
 
 module.exports = {
-    listHistory,
     updatePrice,
     lockRule,
     insertRule,
     listClassPrices,
     listActiveRules,
-    insertHistory,
     deactivateRule,
     lockResourceClass,
     reactivateRule

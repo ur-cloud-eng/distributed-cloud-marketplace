@@ -82,90 +82,10 @@ module.exports = {
                 }
             },
             responses: {
-                201: { description: "Payment succeeded" },
-                400: { description: "Invalid invoice or missing provider allocation" },
+                201: { description: "One simulated payment succeeded. Returns amount, payment reference, commission rate, and provider earnings." },
+                400: { description: "Invalid invoice ID, a nonpositive total, or missing provider attribution" },
                 404: { description: "Invoice not found for this customer" },
                 409: { description: "Invoice already paid or cancelled" }
-            }
-        }
-    },
-    "/api/customers/me/refunds": {
-        get: {
-            tags: ["Customer"],
-            summary: "My refund requests (Customer)",
-            responses: {
-                200: {
-                    description: "Refund requests and their status"
-                },
-                401: {
-                    description: "Not logged in"
-                },
-                403: {
-                    description: "Your role may not use this endpoint"
-                }
-            }
-        },
-        post: {
-            tags: ["Customer"],
-            summary: "Request a refund (Customer)",
-            parameters: [
-                {
-                    name: "Idempotency-Key",
-                    in: "header",
-                    required: false,
-                    description:
-                        "Reuse for retries of the same operation; changed data returns 409.",
-                    schema: { type: "string", maxLength: 128, pattern: "^[!-~]+$" }
-                }
-            ],
-            description:
-                "Creates a Pending request; nothing is refunded until an admin approves it. Omit amount to request everything still refundable.",
-            requestBody: {
-                required: true,
-                content: {
-                    "application/json": {
-                        schema: {
-                            type: "object",
-                            required: ["payment_id", "reason"],
-                            properties: {
-                                payment_id: {
-                                    type: "integer",
-                                    minimum: 1
-                                },
-                                amount: {
-                                    type: "number",
-                                    minimum: 0,
-                                    exclusiveMinimum: true
-                                },
-                                reason: {
-                                    type: "string",
-                                    minLength: 3,
-                                    maxLength: 255
-                                }
-                            }
-                        }
-                    }
-                }
-            },
-            responses: {
-                201: {
-                    description: "Refund request submitted"
-                },
-                400: {
-                    description: "Invalid input or amount above what is still refundable"
-                },
-                401: {
-                    description: "Not logged in"
-                },
-                403: {
-                    description: "Your role may not use this endpoint"
-                },
-                404: {
-                    description: "Payment not found (or not yours)"
-                },
-                409: {
-                    description: "Payment cannot be refunded"
-                }
             }
         }
     }

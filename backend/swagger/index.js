@@ -7,7 +7,6 @@ const finance = require("./finance");
 const customer = require("./customer");
 const provider = require("./provider");
 const notifications = require("./notifications");
-const discounts = require("./discounts");
 const admin = require("./admin");
 const instances = require("./instances");
 const resources = require("./resources");
@@ -63,9 +62,6 @@ module.exports = {
             name: "Notifications"
         },
         {
-            name: "Discounts"
-        },
-        {
             name: "Admin"
         },
         {
@@ -82,9 +78,12 @@ module.exports = {
                         requirements: { type: "string", minLength: 10, maxLength: 4000 }
                     }
                 } } } },
-                responses: { 200: { description: "Suggested resources, reasons and current capacity" },
+                responses: { 200: { description: "Suggested resources, reasons, warnings and advisory capacity check" },
+                    400: { description: "Invalid project requirements" },
                     401: { description: "Sign in required" }, 403: { description: "Customer role required" },
-                    429: { description: "Request limit reached" }, 503: { description: "Advisor unavailable" } }
+                    415: { description: "JSON content is required" }, 429: { description: "Request limit reached" },
+                    502: { description: "Invalid response from the AI advisor" },
+                    503: { description: "Advisor unavailable" }, 504: { description: "Advisor timed out" } }
             }
         },
         ...system,
@@ -94,18 +93,9 @@ module.exports = {
         ...customer,
         ...provider,
         ...notifications,
-        ...discounts,
         ...admin,
         ...instances,
         ...resources,
-        "/api/finance/discount-codes": discounts["/api/discounts"],
-        "/api/finance/discount-codes/{id}": discounts["/api/discounts/{id}"],
-        "/api/finance/discount-codes/validate": {
-            post: adminOperation(discounts["/api/discounts/validate"].post, {
-                summary: "Validate a discount code (Admin)",
-                description: "Requires an administrator session. Validation does not consume a use."
-            })
-        },
         "/api/finance/notifications": {
             get: adminOperation(notifications["/api/notifications"].get, {
                 description:

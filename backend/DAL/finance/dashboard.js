@@ -1,71 +1,32 @@
 const { withReadSnapshot } = require("../dbconn");
-// Data Access Layer: SQL statements for finance.
 
-// COALESCE(SUM(CASE WHEN cond THEN col ELSE 0 END), 0)
-const sum = (col, cond = "1=1") => `COALESCE(SUM(CASE WHEN ${cond} THEN ${col} ELSE 0 END), 0)`;
-
-// Run a single-row query and convert every column to a number
 async function dashboardTotals() {
     return withReadSnapshot(async (connection) => {
-        const one = async (sql) =>
-            Object.fromEntries(
-                Object.entries((await connection.execute(sql))[0][0]).map(([key, value]) => [
-                    key,
-                    Number(value)
-                ])
-            );
-
-        const [
-            invoices,
-            payments,
-            refunds,
-            earnings,
-            withdrawals,
-            discounts,
-            notifications,
-            requests
-        ] = await Promise.all([
-            one(`SELECT COUNT(*) AS count, ${sum("total")} AS total,
-                 ${sum("total", "status = 'Paid'")} AS paid,
-                 ${sum("total", "status = 'Unpaid'")} AS unpaid FROM invoices`),
-
-            one(`SELECT COUNT(*) AS count, ${sum("amount")} AS total
-                 FROM payments WHERE status IN ('Succeeded', 'Refunded')`),
-
-            one(`SELECT COUNT(*) AS count, ${sum("amount")} AS total
-                 FROM refunds WHERE status = 'Succeeded'`),
-
-            one(`SELECT ${sum("gross_amount")} AS gross, ${sum("commission_amount")} AS commission,
-                 ${sum("net_amount")} AS net FROM provider_earnings`),
-
-            one(`SELECT COUNT(*) AS count,
-                 ${sum("amount", "status IN ('Requested', 'Approved')")} AS pending,
-                 ${sum("1", "status = 'Requested'")} AS review,
-                 ${sum("amount", "status = 'Paid'")} AS paid FROM withdrawal_requests`),
-
-            one(
-                `SELECT COUNT(*) AS count, ${sum("used_count")} AS redemptions FROM discount_codes`
-            ),
-
-            one(`SELECT COUNT(*) AS count,
-                 ${sum("1", "read_at IS NULL")} AS unread
-                 FROM Notifications
-                 WHERE category IN ('billing', 'payout') AND channel = 'in_app'`),
-
-            one(`SELECT ${sum("1", "status = 'Pending'")} AS count,
-                 ${sum("amount", "status = 'Pending'")} AS total FROM refund_requests`)
-        ]);
-
-        return {
-            invoices,
-            payments,
-            refunds,
-            earnings,
-            withdrawals,
-            discounts,
-            notifications,
-            requests
-        };
+        const [[invoices]] = await connection.execute(`
+            SELECT COUNT(*) AS count,
+                   COUNT(CASE WHEN status = 'Paid' THEN 1 END) AS paid_count,
+                   COUNT(CASE WHEN status = 'Unpaid' THEN 1 END) AS unpaid_count,
+                   COUNT(CASE WHEN status = 'Cancelled' THEN 1 END) AS cancelled_count,
+                   COALESCE(SUM(total), 0) AS invoiced_total,
+                   COALESCE(SUM(CASE WHEN status = 'Paid' THEN total END), 0) AS paid_total,
+                   COALESCE(SUM(CASE WHEN status = 'Unpaid' THEN total END), 0) AS unpaid_total
+            FROM invoices
+        `);
+        const [[payments]] = await connection.execute(`
+            SELECT COUNT(*) AS count, COALESCE(SUM(amount), 0) AS recorded_total
+            FROM payments
+        `);
+        const [[earnings]] = await connection.execute(`
+            SELECT COALESCE(SUM(gross_amount), 0) AS provider_gross,
+                   COALESCE(SUM(commission_amount), 0) AS platform_commission,
+                   COALESCE(SUM(net_amount), 0) AS provider_net
+            FROM provider_earnings
+        `);
+        const [[notifications]] = await connection.execute(`
+            SELECT COUNT(*) AS count, COUNT(CASE WHEN read_at IS NULL THEN 1 END) AS unread_count
+            FROM Notifications WHERE category = 'billing'
+        `);
+        return { invoices, payments, earnings, notifications };
     });
 }
 

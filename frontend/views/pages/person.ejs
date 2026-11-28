@@ -1,7 +1,0 @@
-<p class="notice">No account record is loaded. Profile and activity data require the existing backend.</p>
-<div class="two-column"><div class="stack">
-<section class="panel"><h2><%= provider ? 'Provider profile' : 'Profile' %></h2><dl class="property-list"><% for (const label of ['Name','Email','Role','Registered']) { %><div><dt><%= label %></dt><dd>Unavailable</dd></div><% } %></dl></section>
-<% if (!provider) { %><section class="panel"><h2>Email verification and security</h2><dl class="property-list"><div><dt>Email verification</dt><dd>Unavailable</dd></div><div><dt>Two-factor authentication</dt><dd>Unavailable</dd></div></dl></section><% } %>
-<section class="panel"><h2><%= provider ? 'Capacity' : 'Resources' %></h2><p class="muted">Totals unavailable.</p></section>
-</div><aside class="panel"><h2><%= provider ? 'Registered hosts' : 'Account activity' %></h2><p class="muted">Records unavailable.</p></aside></div>
-

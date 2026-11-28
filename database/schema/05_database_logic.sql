@@ -68,40 +68,11 @@ BEGIN
     END IF;
 END$$
 
-CREATE TRIGGER trg_lb_target_match_insert
-BEFORE INSERT ON LoadBalancerTargets FOR EACH ROW
+CREATE TRIGGER trg_storage_type_immutable
+BEFORE UPDATE ON StorageVolumes FOR EACH ROW
 BEGIN
-    IF NOT EXISTS (
-        SELECT 1 FROM LoadBalancers lb
-        JOIN VirtualMachines vm ON vm.vm_id=NEW.vm_id
-        JOIN Subnets s ON s.subnet_id=vm.subnet_id
-        JOIN VirtualNetworks n ON n.vnet_id=s.vnet_id
-        JOIN ResourceGroups g ON g.group_id=n.group_id
-        JOIN ResourceRegistry lr ON lr.lb_id=lb.lb_id
-        JOIN ResourceRegistry vr ON vr.vm_id=vm.vm_id
-        WHERE lb.lb_id=NEW.lb_id AND lb.vnet_id=s.vnet_id
-          AND n.status='active' AND s.status='active' AND g.status='active'
-          AND lr.status NOT IN ('cancelled','deleted')
-          AND vr.status NOT IN ('cancelled','deleted')
-    ) THEN
-        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='Invalid LB target: networks or statuses differ';
-    END IF;
-END$$
-
-CREATE TRIGGER trg_lb_target_match_update
-BEFORE UPDATE ON LoadBalancerTargets FOR EACH ROW
-BEGIN
-    IF NOT EXISTS (
-        SELECT 1 FROM LoadBalancers lb
-        JOIN VirtualMachines vm ON vm.vm_id=NEW.vm_id
-        JOIN Subnets s ON s.subnet_id=vm.subnet_id
-        JOIN ResourceRegistry lr ON lr.lb_id=lb.lb_id
-        JOIN ResourceRegistry vr ON vr.vm_id=vm.vm_id
-        WHERE lb.lb_id=NEW.lb_id AND lb.vnet_id=s.vnet_id
-          AND lr.status NOT IN ('cancelled','deleted')
-          AND vr.status NOT IN ('cancelled','deleted')
-    ) THEN
-        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='LB target must belong to same VNet';
+    IF NEW.storage_type <> OLD.storage_type THEN
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='Storage type cannot change';
     END IF;
 END$$
 
@@ -121,6 +92,12 @@ BEGIN
     ) THEN
         SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='Registered LB belongs to another group';
     END IF;
+    IF NEW.storage_id IS NOT NULL AND NOT EXISTS (
+        SELECT 1 FROM StorageVolumes s WHERE s.storage_id=NEW.storage_id
+        AND CAST(s.storage_type AS CHAR)=CAST(NEW.resource_type AS CHAR)
+    ) THEN
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='Storage type/resource type mismatch';
+    END IF;
     IF NEW.database_id IS NOT NULL AND NOT EXISTS (
         SELECT 1 FROM ManagedDatabases d WHERE d.database_id=NEW.database_id
         AND CAST(d.engine AS CHAR)=CAST(NEW.resource_type AS CHAR)
@@ -137,62 +114,106 @@ BEGIN
       OR NOT (NEW.resource_type <=> OLD.resource_type)
       OR NOT (NEW.vm_id <=> OLD.vm_id)
       OR NOT (NEW.lb_id <=> OLD.lb_id)
-      OR NOT (NEW.blob_id <=> OLD.blob_id)
-      OR NOT (NEW.file_id <=> OLD.file_id)
+      OR NOT (NEW.storage_id <=> OLD.storage_id)
       OR NOT (NEW.database_id <=> OLD.database_id)
       OR NOT (NEW.webapp_id <=> OLD.webapp_id) THEN
         SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='Resource registry identity cannot change';
     END IF;
-END$$
-
--- VM billable intervals always derive their owner, provider and unit sizes
--- from the actual VM/subnet/host, NOT from potentially forged request values.
-CREATE TRIGGER trg_vm_usage_insert
-BEFORE INSERT ON VmUsage FOR EACH ROW
-BEGIN
-    DECLARE v_customer INT DEFAULT NULL;
-    DECLARE v_provider INT DEFAULT NULL;
-    DECLARE v_class VARCHAR(20) DEFAULT NULL;
-    DECLARE v_cpu INT DEFAULT NULL;
-    DECLARE v_ram INT DEFAULT NULL;
-    SELECT g.customer_user_id,h.provider_user_id,v.hosting_class,v.vcpu,v.ram_gb
-      INTO v_customer,v_provider,v_class,v_cpu,v_ram
-    FROM VirtualMachines v
-    JOIN ProviderHosts h ON h.host_id=v.host_id
-    JOIN Subnets s ON s.subnet_id=v.subnet_id
-    JOIN VirtualNetworks n ON n.vnet_id=s.vnet_id
-    JOIN ResourceGroups g ON g.group_id=n.group_id
-    WHERE v.vm_id=NEW.vm_id;
-    IF v_customer IS NULL OR v_provider IS NULL THEN
-        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='VM usage has no valid owner or provider';
-    END IF;
-    IF NEW.customer_id <> v_customer OR NEW.provider_id <> v_provider
-       OR NEW.cloud_class <> v_class OR NEW.cpu_cores <> v_cpu OR NEW.ram_gb <> v_ram THEN
-        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='VM usage cannot disagree with its VM allocation';
+    IF NEW.status IN ('cancelled','deleted') AND EXISTS (
+        SELECT 1 FROM ResourceUsagePeriods u
+        WHERE u.resource_id=OLD.resource_id
+          AND (u.ended_at IS NULL OR u.ended_at > COALESCE(NEW.cancelled_at,NEW.deleted_at))
+        FOR SHARE
+    ) THEN
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='Close usage before cancelling a resource';
     END IF;
 END$$
 
 CREATE TRIGGER trg_resource_usage_insert
 BEFORE INSERT ON ResourceUsagePeriods FOR EACH ROW
 BEGIN
-    IF NOT EXISTS (
-       SELECT 1 FROM ResourceRegistry r WHERE r.resource_id=NEW.resource_id
-         AND r.customer_user_id=NEW.customer_id AND r.resource_type <> 'VIRTUAL_MACHINE'
-         AND r.status NOT IN ('cancelled','deleted')
-    ) THEN
-       SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='Usage must refer to active non-VM customer resource';
+    DECLARE v_owner INT DEFAULT NULL;
+    DECLARE v_vm_id INT;
+    DECLARE v_status VARCHAR(20);
+    DECLARE v_provider INT DEFAULT NULL;
+    DECLARE v_class VARCHAR(20);
+    DECLARE v_quantity INT;
+    SELECT customer_user_id, vm_id, status INTO v_owner, v_vm_id, v_status
+    FROM ResourceRegistry WHERE resource_id=NEW.resource_id FOR UPDATE;
+
+    IF v_owner IS NULL OR v_owner <> NEW.customer_id
+       OR v_status IN ('cancelled','deleted')
+       OR (NEW.resource_type <> 'Storage' AND v_status <> 'active') THEN
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='Usage must match the resource owner and state';
     END IF;
-    IF NEW.provider_id IS NOT NULL AND NOT EXISTS
-       (SELECT 1 FROM Users u WHERE u.user_id=NEW.provider_id AND u.role='provider'
-        AND u.email_verified_at IS NOT NULL) THEN
-       SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='Usage provider must be verified';
+
+    SELECT h.provider_user_id, h.hosting_class,
+           CASE NEW.resource_type
+               WHEN 'CPU' THEN a.allocated_cpu
+               WHEN 'RAM' THEN a.allocated_ram_gb
+               WHEN 'Storage' THEN a.allocated_disk_gb
+               ELSE 0
+           END
+      INTO v_provider, v_class, v_quantity
+    FROM HostCapacityAllocations a
+    JOIN ProviderHosts h ON h.host_id=a.host_id
+    JOIN Users u ON u.user_id=h.provider_user_id
+    WHERE (a.resource_id=NEW.resource_id OR a.vm_id=v_vm_id) AND a.released_at IS NULL
+      AND u.role='provider' AND u.email_verified_at IS NOT NULL;
+
+    IF v_provider IS NULL OR v_provider <> NEW.provider_id OR v_class <> NEW.cloud_class
+       OR v_quantity <= 0 OR v_quantity <> NEW.quantity THEN
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='Usage must match its host allocation';
+    END IF;
+    IF (NEW.ended_at IS NULL OR NEW.ended_at > NEW.started_at) AND EXISTS (
+        SELECT 1 FROM ResourceUsagePeriods u
+        WHERE u.resource_id=NEW.resource_id AND u.resource_type=NEW.resource_type
+          AND (u.ended_at IS NULL OR u.ended_at > NEW.started_at)
+          AND (NEW.ended_at IS NULL OR u.started_at < NEW.ended_at)
+          AND (u.ended_at IS NULL OR u.ended_at > u.started_at)
+        FOR SHARE
+    ) THEN
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='Usage intervals cannot overlap';
+    END IF;
+END$$
+
+CREATE TRIGGER trg_resource_usage_update
+BEFORE UPDATE ON ResourceUsagePeriods FOR EACH ROW
+BEGIN
+    DECLARE v_status VARCHAR(20);
+    DECLARE v_cancelled_at DATETIME(6);
+    DECLARE v_deleted_at DATETIME(6);
+    IF NEW.usage_period_id <> OLD.usage_period_id OR NEW.resource_id <> OLD.resource_id
+       OR NEW.customer_id <> OLD.customer_id
+       OR NEW.provider_id <> OLD.provider_id OR NEW.resource_type <> OLD.resource_type
+       OR NEW.cloud_class <> OLD.cloud_class OR NEW.quantity <> OLD.quantity THEN
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='Recorded usage attribution and quantity cannot change';
+    END IF;
+    IF OLD.ended_at IS NOT NULL AND NEW.ended_at IS NULL THEN
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='Closed usage cannot be reopened';
+    END IF;
+    SELECT status, cancelled_at, deleted_at INTO v_status, v_cancelled_at, v_deleted_at
+    FROM ResourceRegistry WHERE resource_id=NEW.resource_id FOR UPDATE;
+    IF v_status IN ('cancelled','deleted') AND
+       (NEW.ended_at IS NULL OR NEW.ended_at > COALESCE(v_cancelled_at,v_deleted_at)) THEN
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='Usage cannot continue after cancellation';
+    END IF;
+    IF (NEW.ended_at IS NULL OR NEW.ended_at > NEW.started_at) AND EXISTS (
+        SELECT 1 FROM ResourceUsagePeriods u
+        WHERE u.resource_id=NEW.resource_id AND u.resource_type=NEW.resource_type
+          AND u.usage_period_id<>OLD.usage_period_id
+          AND (u.ended_at IS NULL OR u.ended_at > NEW.started_at)
+          AND (NEW.ended_at IS NULL OR u.started_at < NEW.ended_at)
+          AND (u.ended_at IS NULL OR u.ended_at > u.started_at)
+        FOR SHARE
+    ) THEN
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='Usage intervals cannot overlap';
     END IF;
 END$$
 
 -- Protected capacity reservation and VM creation; one transaction.
 -- CALL sp_CreateVmWithAllocation(customer_id,subnet_id,host_id,name,class,
 --                                vcpu,ram_gb,disk_gb,hourly_price,@new_vm_id);
--- Developer 1 (feature/instances): current protected VM allocation procedure.
 CREATE PROCEDURE sp_CreateVmWithAllocation(
     IN p_actor_customer_id INT,
     IN p_subnet_id INT,
@@ -303,13 +324,10 @@ BEGIN
         (group_id, customer_user_id, resource_type, vm_id, status)
     VALUES (v_group_id, v_customer_id, 'VIRTUAL_MACHINE', p_new_vm_id, 'stopped');
 
-    INSERT INTO ResourceActivityLogs (actor_user_id, resource_id, entity_type, entity_pk, action, new_status)
-    VALUES (p_actor_customer_id, LAST_INSERT_ID(), 'VIRTUAL_MACHINE', p_new_vm_id, 'created', 'stopped');
-    -- Disk is reserved from creation until cancellation, even while stopped.
-    INSERT INTO InstanceStorageUsage
-        (vm_id, customer_id, provider_id, cloud_class, quantity, started_at)
-    SELECT p_new_vm_id, v_customer_id, h.provider_user_id,
-           p_hosting_class, p_disk_gb, UTC_TIMESTAMP()
+    INSERT INTO ResourceUsagePeriods
+        (resource_id, customer_id, provider_id, resource_type, cloud_class, quantity, started_at)
+    SELECT LAST_INSERT_ID(), v_customer_id, h.provider_user_id, 'Storage',
+           p_hosting_class, p_disk_gb, UTC_TIMESTAMP(6)
     FROM ProviderHosts h WHERE h.host_id = p_host_id;
     COMMIT;
 END$$
@@ -333,26 +351,24 @@ BEGIN
     ) THEN
         SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='Invalid resource group or customer';
     END IF;
-    CASE p_resource_type
-      WHEN 'LOAD_BALANCER' THEN
+    CASE
+      WHEN p_resource_type='LOAD_BALANCER' THEN
         SELECT MAX(n.group_id) INTO v_actual_group FROM LoadBalancers l
         JOIN VirtualNetworks n ON n.vnet_id=l.vnet_id WHERE l.lb_id=p_entity_id;
-      WHEN 'BLOB_STORAGE' THEN
-        SELECT MAX(group_id) INTO v_actual_group FROM BlobStorage WHERE blob_id=p_entity_id;
+      WHEN p_resource_type IN ('BLOB_STORAGE','FILE_STORAGE') THEN
+        SELECT MAX(group_id) INTO v_actual_group FROM StorageVolumes
+        WHERE storage_id=p_entity_id AND storage_type=p_resource_type;
         SET v_initial_status='active';
-      WHEN 'FILE_STORAGE' THEN
-        SELECT MAX(group_id) INTO v_actual_group FROM FileStorage WHERE file_id=p_entity_id;
-        SET v_initial_status='active';
-      WHEN 'SQL_SERVER' THEN
+      WHEN p_resource_type='SQL_SERVER' THEN
         SELECT MAX(group_id), MAX(engine) INTO v_actual_group,v_db_engine
         FROM ManagedDatabases WHERE database_id=p_entity_id;
-      WHEN 'POSTGRESQL' THEN
+      WHEN p_resource_type='POSTGRESQL' THEN
         SELECT MAX(group_id), MAX(engine) INTO v_actual_group,v_db_engine
         FROM ManagedDatabases WHERE database_id=p_entity_id;
-      WHEN 'MYSQL' THEN
+      WHEN p_resource_type='MYSQL' THEN
         SELECT MAX(group_id), MAX(engine) INTO v_actual_group,v_db_engine
         FROM ManagedDatabases WHERE database_id=p_entity_id;
-      WHEN 'WEB_APP' THEN
+      WHEN p_resource_type='WEB_APP' THEN
         SELECT MAX(group_id) INTO v_actual_group FROM WebApps WHERE webapp_id=p_entity_id;
       ELSE
         SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='Invalid type for registration';
@@ -365,60 +381,34 @@ BEGIN
         SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='Database engine mismatch';
     END IF;
     INSERT INTO ResourceRegistry
-      (group_id,customer_user_id,resource_type,lb_id,blob_id,file_id,database_id,webapp_id,status,activated_at)
+      (group_id,customer_user_id,resource_type,lb_id,storage_id,database_id,webapp_id,status,activated_at)
     VALUES(p_group_id,p_customer_id,p_resource_type,
       IF(p_resource_type='LOAD_BALANCER',p_entity_id,NULL),
-      IF(p_resource_type='BLOB_STORAGE',p_entity_id,NULL),
-      IF(p_resource_type='FILE_STORAGE',p_entity_id,NULL),
+      IF(p_resource_type IN ('BLOB_STORAGE','FILE_STORAGE'),p_entity_id,NULL),
       IF(p_resource_type IN ('SQL_SERVER','POSTGRESQL','MYSQL'),p_entity_id,NULL),
       IF(p_resource_type='WEB_APP',p_entity_id,NULL),v_initial_status,
       IF(v_initial_status='active',UTC_TIMESTAMP(),NULL));
     SET p_new_resource_id=LAST_INSERT_ID();
-    INSERT INTO ResourceActivityLogs(actor_user_id,resource_id,entity_type,entity_pk,action,new_status)
-    VALUES(p_customer_id,p_new_resource_id,p_resource_type,p_entity_id,'registered',v_initial_status);
     COMMIT;
-END$$
-
-CREATE PROCEDURE sp_AddLoadBalancerTarget(IN p_lb_id INT,IN p_vm_id INT)
-BEGIN
-    IF NOT EXISTS (
-        SELECT 1 FROM LoadBalancers lb JOIN VirtualNetworks n ON n.vnet_id=lb.vnet_id
-        JOIN ResourceGroups g ON g.group_id=n.group_id
-        JOIN VirtualMachines vm ON vm.vm_id=p_vm_id
-        JOIN Subnets s ON s.subnet_id=vm.subnet_id
-        JOIN ResourceRegistry lr ON lr.lb_id=lb.lb_id
-        JOIN ResourceRegistry vr ON vr.vm_id=vm.vm_id
-        WHERE lb.lb_id=p_lb_id AND lb.vnet_id=s.vnet_id
-          AND g.status='active' AND n.status='active' AND s.status='active'
-          AND lr.status NOT IN ('cancelled','deleted')
-          AND vr.status NOT IN ('cancelled','deleted')
-    ) THEN
-        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='LB and VM must be active in same VNet';
-    END IF;
-    INSERT INTO LoadBalancerTargets(lb_id,vm_id)
-    VALUES(p_lb_id,p_vm_id) ON DUPLICATE KEY UPDATE lb_id=lb_id;
 END$$
 
 CREATE PROCEDURE sp_CancelResource(IN p_resource_id INT,IN p_actor_user_id INT)
 BEGIN
     DECLARE v_customer_id INT DEFAULT NULL;
-    DECLARE v_type VARCHAR(30) DEFAULT NULL;
     DECLARE v_status VARCHAR(20) DEFAULT NULL;
     DECLARE v_vm_id INT DEFAULT NULL;
     DECLARE v_lb_id INT DEFAULT NULL;
-    DECLARE v_blob_id INT DEFAULT NULL;
-    DECLARE v_file_id INT DEFAULT NULL;
+    DECLARE v_storage_id INT DEFAULT NULL;
     DECLARE v_db_id INT DEFAULT NULL;
     DECLARE v_webapp_id INT DEFAULT NULL;
     DECLARE v_actor_role VARCHAR(20) DEFAULT NULL;
     DECLARE v_host_id INT DEFAULT NULL;
-    DECLARE v_now DATETIME;
+    DECLARE v_now DATETIME(6);
     DECLARE EXIT HANDLER FOR SQLEXCEPTION BEGIN ROLLBACK; RESIGNAL; END;
-    SET v_now=UTC_TIMESTAMP();
     START TRANSACTION;
     SELECT role INTO v_actor_role FROM Users WHERE user_id=p_actor_user_id FOR UPDATE;
-    SELECT customer_user_id,resource_type,status,vm_id,lb_id,blob_id,file_id,database_id,webapp_id
-      INTO v_customer_id,v_type,v_status,v_vm_id,v_lb_id,v_blob_id,v_file_id,v_db_id,v_webapp_id
+    SELECT customer_user_id,status,vm_id,lb_id,storage_id,database_id,webapp_id
+      INTO v_customer_id,v_status,v_vm_id,v_lb_id,v_storage_id,v_db_id,v_webapp_id
     FROM ResourceRegistry WHERE resource_id=p_resource_id FOR UPDATE;
     IF v_customer_id IS NULL OR v_actor_role IS NULL
        OR (v_actor_role<>'admin' AND p_actor_user_id<>v_customer_id) THEN
@@ -427,27 +417,20 @@ BEGIN
     IF v_status IN ('cancelled','deleted') THEN
         SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='Resource already cancelled';
     END IF;
-    IF v_vm_id IS NOT NULL AND EXISTS
-       (SELECT 1 FROM LoadBalancerTargets WHERE vm_id=v_vm_id) THEN
-        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='Remove VM from load balancers first';
-    END IF;
     IF v_db_id IS NOT NULL AND EXISTS (
         SELECT 1 FROM WebApps w JOIN ResourceRegistry r ON r.webapp_id=w.webapp_id
         WHERE w.database_id=v_db_id AND r.status NOT IN ('cancelled','deleted')
     ) THEN
         SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='Cancel dependent Web Apps first';
     END IF;
+    SET v_now=UTC_TIMESTAMP(6);
     IF v_vm_id IS NOT NULL THEN
         SELECT host_id INTO v_host_id FROM VirtualMachines WHERE vm_id=v_vm_id;
         -- Serialize with creation and other host capacity changes.
         SELECT host_id INTO v_host_id FROM ProviderHosts WHERE host_id=v_host_id FOR UPDATE;
-        SET v_now=UTC_TIMESTAMP();
-        UPDATE VmUsage SET stopped_at=v_now WHERE vm_id=v_vm_id AND stopped_at IS NULL;
-        UPDATE InstanceStorageUsage SET ended_at=v_now
-          WHERE vm_id=v_vm_id AND ended_at IS NULL;
+        SET v_now=UTC_TIMESTAMP(6);
         UPDATE HostCapacityAllocations SET released_at=v_now
           WHERE vm_id=v_vm_id AND released_at IS NULL;
-        UPDATE InstanceIPPool SET vm_id=NULL, allocated_at=NULL WHERE vm_id=v_vm_id;
         UPDATE VirtualMachines SET status='stopped' WHERE vm_id=v_vm_id;
     END IF;
     IF v_vm_id IS NULL THEN
@@ -459,14 +442,10 @@ BEGIN
         END IF;
     END IF;
     IF v_lb_id IS NOT NULL THEN
-        DELETE FROM LoadBalancerTargets WHERE lb_id=v_lb_id;
         UPDATE LoadBalancers SET status='inactive' WHERE lb_id=v_lb_id;
     END IF;
-    IF v_blob_id IS NOT NULL THEN
-        UPDATE BlobStorage SET status='inactive' WHERE blob_id=v_blob_id;
-    END IF;
-    IF v_file_id IS NOT NULL THEN
-        UPDATE FileStorage SET status='inactive' WHERE file_id=v_file_id;
+    IF v_storage_id IS NOT NULL THEN
+        UPDATE StorageVolumes SET status='inactive' WHERE storage_id=v_storage_id;
     END IF;
     IF v_db_id IS NOT NULL THEN
         UPDATE ManagedDatabases SET status='stopped' WHERE database_id=v_db_id;
@@ -478,11 +457,6 @@ BEGIN
       WHERE resource_id=p_resource_id AND ended_at IS NULL;
     UPDATE ResourceRegistry SET status='cancelled',cancelled_at=v_now
       WHERE resource_id=p_resource_id;
-    INSERT INTO ResourceActivityLogs(actor_user_id,resource_id,entity_type,entity_pk,
-                                     action,old_status,new_status)
-    VALUES(p_actor_user_id,p_resource_id,v_type,
-           COALESCE(v_vm_id,v_lb_id,v_blob_id,v_file_id,v_db_id,v_webapp_id),
-           'cancelled',v_status,'cancelled');
     COMMIT;
 END$$
 

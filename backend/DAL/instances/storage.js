@@ -1,32 +1,20 @@
 function model(type) {
-    if (type === "blob")
-        return {
-            table: "BlobStorage",
-            column: "blob_id",
-            type: "BLOB_STORAGE",
-            insert: insertBlob
-        };
-    if (type === "file")
-        return {
-            table: "FileStorage",
-            column: "file_id",
-            type: "FILE_STORAGE",
-            insert: insertFile
-        };
-    return null;
+    if (type !== "blob" && type !== "file") return null;
+    return {
+        table: "StorageVolumes",
+        column: "storage_id",
+        legacyId: type === "blob" ? "blob_id" : "file_id",
+        type: type === "blob" ? "BLOB_STORAGE" : "FILE_STORAGE",
+        insert
+    };
 }
-async function insertBlob(connection, groupId, data) {
+
+async function insert(connection, groupId, data) {
     const [result] = await connection.execute(
-        "INSERT INTO BlobStorage (group_id,name,size_gb) VALUES (?,?,?)",
-        [groupId, data.name, data.diskGb]
+        "INSERT INTO StorageVolumes (group_id,storage_type,name,size_gb) VALUES (?,?,?,?)",
+        [groupId, data.type, data.name, data.diskGb]
     );
     return result.insertId;
 }
-async function insertFile(connection, groupId, data) {
-    const [result] = await connection.execute(
-        "INSERT INTO FileStorage (group_id,name,size_gb) VALUES (?,?,?)",
-        [groupId, data.name, data.diskGb]
-    );
-    return result.insertId;
-}
+
 module.exports = { model };

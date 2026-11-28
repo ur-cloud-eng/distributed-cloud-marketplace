@@ -1,5 +1,6 @@
 const repository = require("../../DAL/finance/payment");
-const { HttpError, money, sumMoney, prorateMoney, allocateAmounts } = require("../../utils/util");
+const { lockInvoice } = require("../../DAL/finance/invoice");
+const { HttpError, money, sumMoney, prorateMoney } = require("../../utils/util");
 const { withTransaction } = require("../../DAL/dbconn");
 const { bad, makeRef } = require("../../utils/helpers");
 const { notify } = require("./notificationService");
@@ -9,27 +10,7 @@ const COMMISSION = Number(process.env.PLATFORM_COMMISSION_RATE ?? 15);
 
 const listPayments = repository.listPayments;
 
-// Split the invoice total across providers in proportion to their line items.
-// Returns null when any line has no provider (allocations must be supplied).
-async function deriveAllocations(connection, invoiceId, invoiceTotal) {
-    const [rows] = await repository.providerInvoiceTotals(connection, [invoiceId]);
-
-    if (!rows.length || rows.some((row) => row.provider_id == null)) return null;
-
-    const amounts = allocateAmounts(
-        invoiceTotal,
-        rows.map((row) => Number(row.gross))
-    );
-    const allocations = rows.map((row, index) => ({
-        provider_id: row.provider_id,
-        gross_amount: amounts[index]
-    }));
-
-    return allocations.filter((a) => a.gross_amount > 0);
-}
-
-// allocations: optional [{ provider_id, gross_amount }]; derived from the invoice when omitted
-async function createPayment({ invoiceId, allocations = null, customerId = null }) {
+async function createPayment({ invoiceId, customerId }) {
     if (!(
         Number.isFinite(COMMISSION) &&
         COMMISSION >= 0 &&
@@ -39,9 +20,9 @@ async function createPayment({ invoiceId, allocations = null, customerId = null 
         throw new HttpError(500, { error: "Invalid commission rate." });
 
     return withTransaction(async (connection) => {
-        const [[invoice]] = await repository.lockInvoice(connection, [invoiceId]);
+        const [[invoice]] = await lockInvoice(connection, invoiceId);
 
-        if (!invoice || (customerId !== null && Number(invoice.customer_id) !== Number(customerId)))
+        if (!invoice || Number(invoice.customer_id) !== Number(customerId))
             throw new HttpError(404, { error: "Invoice not found for your account." });
 
         if (invoice.status !== "Unpaid")
@@ -50,17 +31,18 @@ async function createPayment({ invoiceId, allocations = null, customerId = null 
                 invoice_status: invoice.status
             });
 
-        const providers =
-            allocations ?? (await deriveAllocations(connection, invoiceId, invoice.total));
-        if (!providers?.length)
+        const [items] = await repository.providerInvoiceTotals(connection, [invoiceId]);
+        if (!items.length || items.some((item) => item.provider_id == null))
             throw bad(
                 "This invoice has no provider allocation. Please contact support; payment cannot be completed until its invoice items identify a provider."
             );
 
-        const total = sumMoney(providers.map((p) => p.gross_amount));
+        const providers = items.filter((item) => item.gross_amount > 0);
+        const total = sumMoney(providers.map((item) => item.gross_amount));
+        if (total <= 0) throw bad("Invoice total must be positive to create a payment.");
 
         if (total !== money(invoice.total))
-            throw bad("Allocations must equal invoice total.", {
+            throw bad("Provider line totals must equal invoice total.", {
                 invoice_total: money(invoice.total),
                 allocation_total: total
             });
@@ -106,7 +88,6 @@ async function createPayment({ invoiceId, allocations = null, customerId = null 
             notify(connection, {
                 to,
                 id,
-                type: "PaymentSucceeded",
                 title,
                 message,
                 paymentId: insertId

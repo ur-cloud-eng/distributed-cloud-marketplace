@@ -3,16 +3,10 @@ const express = require("express");
 const { HttpError, isDate, positiveInteger } = require("../../../utils/util");
 const { bad, optionalId } = require("../../../utils/helpers");
 const { RESOURCE_TYPES, CLOUD_CLASSES } = require("../../../utils/constants");
-const discounts = require("../../../BLL/finance/discountService");
 const billing = require("../../../BLL/finance/invoiceService");
 const usageBilling = require("../../../BLL/finance/usageBillingService");
 
 const router = express.Router();
-
-function invoiceDiscount(value) {
-    if (value != null && typeof value !== "string") throw bad("discount_code must be a string.");
-    return discounts.normalizeCode(value);
-}
 
 const validPeriod = (start, end) => isDate(start) && isDate(end) && end > start;
 
@@ -74,7 +68,6 @@ router.post(
             customerId,
             periodStart: start,
             periodEnd: end,
-            discountCode: invoiceDiscount(req.body.discount_code),
             items
         });
 
@@ -102,8 +95,7 @@ router.post(
         const input = {
             customerId,
             periodStart: start,
-            periodEnd: end,
-            discountCode: invoiceDiscount(req.body.discount_code)
+            periodEnd: end
         };
 
         if (dry_run !== undefined && typeof dry_run !== "boolean")
@@ -111,7 +103,7 @@ router.post(
 
         if (dry_run === true) return res.json(await usageBilling.previewUsageInvoice(input));
 
-        const invoice = await usageBilling.generateUsageInvoice(input, req.user);
+        const invoice = await usageBilling.generateUsageInvoice(input);
 
         res.status(201).json({ message: "Usage-based simulated invoice generated", ...invoice });
     }, "Could not generate usage invoice.")
@@ -145,7 +137,7 @@ router.patch(
     handle(async (req, res) => {
         const id = positiveInteger(req.params.id);
         if (!id) throw bad("Invalid invoice ID.");
-        res.json(await billing.cancelInvoice(id, req.user));
+        res.json(await billing.cancelInvoice(id));
     }, "Could not cancel invoice.")
 );
 

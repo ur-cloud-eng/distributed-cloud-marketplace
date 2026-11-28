@@ -1,5 +1,0 @@
-<nav class="tabs" aria-label="Detail sections" data-tabs>
-<% for (const [id,label] of [['overview','Overview'],['dependencies','Dependencies'],['activity','Activity']]) { %>
-<a href="?tab=<%= id %>" data-tab="<%= id %>" <%= id === 'overview' ? 'aria-current=page' : '' %>><%= label %></a>
-<% } %></nav>
-

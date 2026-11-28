@@ -4,8 +4,6 @@ const { positiveInteger } = require("../../../utils/util");
 const { bad } = require("../../../utils/helpers");
 const instances = require("../../../BLL/instances/instanceService");
 
-// Developer 1 VM creation and customer listing + D2's supplementary lifecycle.
-// Uses the existing verified express-session auth; there is no second login.
 module.exports = function createRouter() {
     const router = express.Router();
     router.use(authenticate, requireRole("Customer", "Admin"));
@@ -54,30 +52,6 @@ module.exports = function createRouter() {
         handle(async (req, res) => {
             res.json(await instances.stopInstance(instanceId(req), req.user));
         }, "Could not stop instance.")
-    );
-    router.post(
-        "/:id/restart",
-        handle(async (req, res) => {
-            res.json(await instances.restartInstance(instanceId(req), req.user));
-        }, "Could not restart instance.")
-    );
-    router.get(
-        "/:id/activity",
-        handle(async (req, res) => {
-            res.json({ activities: await instances.getActivityHistory(instanceId(req), req.user) });
-        }, "Could not load instance activity.")
-    );
-    router.post(
-        "/:id/ip",
-        handle(async (req, res) => {
-            res.json(await instances.assignIP(instanceId(req), req.user));
-        }, "Could not assign IP.")
-    );
-    router.delete(
-        "/:id/ip",
-        handle(async (req, res) => {
-            res.json(await instances.releaseIP(instanceId(req), req.user));
-        }, "Could not release IP.")
     );
     router.delete(
         "/:id",

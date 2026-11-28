@@ -18,9 +18,14 @@ function render(target,data,fields=[]) {
         if(!data.length) {target.textContent='No records found.'; return;}
         if(data.some(row=>!row || typeof row!=='object')) {const list=el('ul');data.forEach(x=>list.append(el('li',format(x))));target.append(list);return;}
         const keys=fields.length?fields:[...new Set(data.flatMap(row=>Object.keys(row)))];
+        const region=el('div');
+        region.className='table-scroll';
+        region.tabIndex=0;
+        region.setAttribute('role','region');
+        region.setAttribute('aria-label','Results table');
         const table=el('table'), head=el('thead'), header=el('tr'), body=el('tbody');
         keys.forEach(key=>header.append(el('th',label(key))));head.append(header);table.append(head,body);
-        for(const row of data) {const tr=el('tr');keys.forEach(key=>tr.append(el('td',format(row[key]))));body.append(tr);}target.append(table);return;
+        for(const row of data) {const tr=el('tr');keys.forEach(key=>tr.append(el('td',key==='is_read' ? (row[key] ? 'Read' : 'Unread') : format(row[key]))));body.append(tr);}region.append(table);target.append(region);return;
     }
     if(data && typeof data==='object') {
         const dl=el('dl');
@@ -44,8 +49,6 @@ function collect(form){
         if(value==='')continue;
         const field=form.elements.namedItem(key);
         if(field.type==='number')data[key]=Number(value);
-        else if(field.type==='datetime-local')data[key]=new Date(value).toISOString();
-        else if(key==='active')data[key]=value==='true';
         else data[key]=value;
     }
     if('confirmPassword' in data){if(data.password!==data.confirmPassword)throw new Error('Passwords do not match.');delete data.confirmPassword;}
@@ -57,12 +60,12 @@ for(const form of document.querySelectorAll('.live-form')){
         event.preventDefault();const output=form.querySelector('.form-result'),button=form.querySelector('button[type=submit]');output.classList.remove('live-error');
         try {
             const {path,data}=collect(form);const method=form.dataset.method;
-            if((method==='DELETE'||/\/cancel$|\/refunds$|\/payments$|\/withdrawals$|\/usage-invoices$/.test(path)&&method!=='GET'&&data.dry_run!==true)&&!window.confirm('Confirm this operation?'))return;
+            if((method==='DELETE'||/\/cancel$|\/payments$|\/usage-invoices$/.test(path)&&method!=='GET'&&data.dry_run!==true)&&!window.confirm('Confirm this operation?'))return;
             button.disabled=true;output.textContent='Processing…';const result=await api(path,method,data);
             if(path==='/api/auth/login'||path==='/api/auth/login/2fa'){location.assign(result.requires2FA?'/two-factor':'/portal');return;}
             render(output,result);
             if(path==='/api/auth/register'||path==='/api/auth/verify-email'){const link=el('a','Go to sign in');link.href='/login';output.append(link);}
-            if(method!=='GET'&&document.querySelector('[data-source]'))await refresh();
+            if(method!=='GET')await refresh();
         }catch(error){showError(output,error);}finally{button.disabled=false;}
     });
 }

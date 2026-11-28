@@ -9,23 +9,20 @@ CREATE TABLE ResourceRegistry (
                        'SQL_SERVER','POSTGRESQL','MYSQL','WEB_APP') NOT NULL,
     vm_id INT NULL,
     lb_id INT NULL,
-    blob_id INT NULL,
-    file_id INT NULL,
+    storage_id INT NULL,
     database_id INT NULL,
     webapp_id INT NULL,
     status ENUM('created','active','stopped','cancelled','deleted') NOT NULL DEFAULT 'created',
     activated_at DATETIME NULL,
-    cancelled_at DATETIME NULL,
-    deleted_at DATETIME NULL,
+    cancelled_at DATETIME(6) NULL,
+    deleted_at DATETIME(6) NULL,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT fk_registry_group_owner FOREIGN KEY (group_id,customer_user_id)
         REFERENCES ResourceGroups(group_id,customer_user_id) ON DELETE RESTRICT,
     CONSTRAINT fk_registry_vm FOREIGN KEY (vm_id) REFERENCES VirtualMachines(vm_id) ON DELETE RESTRICT,
     CONSTRAINT fk_registry_lb FOREIGN KEY (lb_id) REFERENCES LoadBalancers(lb_id) ON DELETE RESTRICT,
-    CONSTRAINT fk_registry_blob_same_group FOREIGN KEY (blob_id,group_id)
-        REFERENCES BlobStorage(blob_id,group_id) ON DELETE RESTRICT,
-    CONSTRAINT fk_registry_file_same_group FOREIGN KEY (file_id,group_id)
-        REFERENCES FileStorage(file_id,group_id) ON DELETE RESTRICT,
+    CONSTRAINT fk_registry_storage_same_group FOREIGN KEY (storage_id,group_id)
+        REFERENCES StorageVolumes(storage_id,group_id) ON DELETE RESTRICT,
     CONSTRAINT fk_registry_db_same_group FOREIGN KEY (database_id,group_id)
         REFERENCES ManagedDatabases(database_id,group_id) ON DELETE RESTRICT,
     CONSTRAINT fk_registry_webapp_same_group FOREIGN KEY (webapp_id,group_id)
@@ -33,19 +30,17 @@ CREATE TABLE ResourceRegistry (
     CONSTRAINT uq_registry_resource_owner UNIQUE (resource_id,customer_user_id),
     CONSTRAINT uq_registry_vm UNIQUE (vm_id),
     CONSTRAINT uq_registry_lb UNIQUE (lb_id),
-    CONSTRAINT uq_registry_blob UNIQUE (blob_id),
-    CONSTRAINT uq_registry_file UNIQUE (file_id),
+    CONSTRAINT uq_registry_storage UNIQUE (storage_id),
     CONSTRAINT uq_registry_db UNIQUE (database_id),
     CONSTRAINT uq_registry_webapp UNIQUE (webapp_id),
     CONSTRAINT ck_registry_one_entity CHECK (
-        (vm_id IS NOT NULL) + (lb_id IS NOT NULL) + (blob_id IS NOT NULL) +
-        (file_id IS NOT NULL) + (database_id IS NOT NULL) + (webapp_id IS NOT NULL) = 1
+        (vm_id IS NOT NULL) + (lb_id IS NOT NULL) + (storage_id IS NOT NULL) +
+        (database_id IS NOT NULL) + (webapp_id IS NOT NULL) = 1
     ),
     CONSTRAINT ck_registry_type CHECK (
          (resource_type='VIRTUAL_MACHINE' AND vm_id IS NOT NULL) OR
          (resource_type='LOAD_BALANCER' AND lb_id IS NOT NULL) OR
-         (resource_type='BLOB_STORAGE' AND blob_id IS NOT NULL) OR
-         (resource_type='FILE_STORAGE' AND file_id IS NOT NULL) OR
+         (resource_type IN ('BLOB_STORAGE','FILE_STORAGE') AND storage_id IS NOT NULL) OR
          (resource_type IN ('SQL_SERVER','POSTGRESQL','MYSQL') AND database_id IS NOT NULL) OR
          (resource_type='WEB_APP' AND webapp_id IS NOT NULL)
     ),
@@ -80,18 +75,16 @@ CREATE TABLE HostCapacityAllocations (
     KEY idx_alloc_host_active (host_id,released_at)
 ) ENGINE=InnoDB;
 
--- Canonical non-VM usage table. Finance records explicit price units, not
--- duplicate copies in resource_usage_periods. Structural resources are free.
 CREATE TABLE ResourceUsagePeriods (
     usage_period_id INT AUTO_INCREMENT PRIMARY KEY,
     resource_id INT NOT NULL,
     customer_id INT NOT NULL,
-    provider_id INT NULL,
+    provider_id INT NOT NULL,
     resource_type ENUM('CPU','RAM','Storage','GPU') NOT NULL,
     cloud_class ENUM('Economy','Business','Critical') NOT NULL,
-    quantity DECIMAL(12,2) NOT NULL,
-    started_at DATETIME NOT NULL,
-    ended_at DATETIME NULL,
+    quantity DECIMAL(13,3) NOT NULL,
+    started_at DATETIME(6) NOT NULL,
+    ended_at DATETIME(6) NULL,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT fk_usage_resource FOREIGN KEY (resource_id) REFERENCES ResourceRegistry(resource_id)
         ON DELETE RESTRICT,
@@ -99,29 +92,9 @@ CREATE TABLE ResourceUsagePeriods (
         REFERENCES ResourceRegistry(resource_id,customer_user_id) ON DELETE RESTRICT,
     CONSTRAINT fk_usage_provider FOREIGN KEY (provider_id) REFERENCES Users(user_id)
         ON DELETE RESTRICT,
-    CONSTRAINT uq_usage_start UNIQUE (resource_id,resource_type,started_at),
+    KEY idx_usage_dimension (resource_id,resource_type,started_at),
     CONSTRAINT ck_usage_quantity CHECK (quantity > 0),
     CONSTRAINT ck_usage_times CHECK (ended_at IS NULL OR ended_at >= started_at),
     KEY idx_usage_customer (customer_id,started_at),
     KEY idx_usage_resource_end (resource_id,ended_at)
-) ENGINE=InnoDB;
-
-CREATE TABLE ResourceActivityLogs (
-    log_id BIGINT AUTO_INCREMENT PRIMARY KEY,
-    actor_user_id INT NULL,
-    resource_id INT NULL,
-    entity_type VARCHAR(40) NOT NULL,
-    entity_pk INT NOT NULL,
-    action VARCHAR(40) NOT NULL,
-    old_status VARCHAR(30) NULL,
-    new_status VARCHAR(30) NULL,
-    details JSON NULL,
-    occurred_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT fk_activity_actor FOREIGN KEY (actor_user_id) REFERENCES Users(user_id)
-        ON DELETE SET NULL,
-    CONSTRAINT fk_activity_registry FOREIGN KEY (resource_id) REFERENCES ResourceRegistry(resource_id)
-        ON DELETE RESTRICT,
-    KEY idx_activity_resource (resource_id,occurred_at),
-    KEY idx_activity_actor (actor_user_id,occurred_at),
-    KEY idx_activity_entity (entity_type,entity_pk)
 ) ENGINE=InnoDB;

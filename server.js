@@ -14,7 +14,6 @@ const customerRoutes = require("./backend/PL/routes/finance/customer");
 const notificationRoutes = require("./backend/PL/routes/finance/notifications");
 const providerRoutes = require("./backend/PL/routes/finance/provider");
 const adminRoutes = require("./backend/PL/routes/finance/admin");
-const discountRoutes = require("./backend/PL/routes/finance/discount");
 const instanceRoutes = require("./backend/PL/routes/instances/instancesRoutes");
 
 const { authenticate, requireRole } = require("./backend/PL/middleware/access");
@@ -81,7 +80,6 @@ app.use("/api/admin", authenticate, requireRole("Admin"), adminRoutes);
 app.use("/api/customers/me", authenticate, requireRole("Customer"), customerRoutes);
 app.use("/api/providers/me", authenticate, requireRole("Provider"), providerRoutes);
 app.use("/api/notifications", authenticate, notificationRoutes);
-app.use("/api/discounts", authenticate, discountRoutes);
 app.use("/api/instances", instanceRoutes());
 app.use("/api/hosts", require("./backend/PL/routes/instances/hostRoutes"));
 app.use(

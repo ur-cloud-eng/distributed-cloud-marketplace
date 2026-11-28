@@ -17,11 +17,11 @@ function capacity(value, label) {
 }
 function cidr(value) {
     if (typeof value !== "string") fail(400, "Invalid IPv4 CIDR.");
-    const parts = value.split("/");
-    if (parts.length !== 2 || !isIPv4(parts[0]) || !/^(0|[1-9]|[12][0-9]|3[0-2])$/.test(parts[1]))
+    const [address, prefix, extra] = value.split("/");
+    if (extra !== undefined || !isIPv4(address) || !/^(0|[1-9]|[12][0-9]|3[0-2])$/.test(prefix))
         fail(400, "Invalid IPv4 CIDR.");
-    const start = parts[0].split(".").reduce((n, x) => n * 256 + Number(x), 0);
-    const size = 2 ** (32 - Number(parts[1]));
+    const start = address.split(".").reduce((n, x) => n * 256 + Number(x), 0);
+    const size = 2 ** (32 - Number(prefix));
     if (start % size !== 0) fail(400, "CIDR must use the network address.");
     return { start, end: start + size - 1 };
 }

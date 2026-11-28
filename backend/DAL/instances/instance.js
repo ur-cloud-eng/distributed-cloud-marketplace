@@ -1,16 +1,5 @@
 const db = require("../dbconn");
 
-const {
-    setInstanceStatus,
-    openUsageCount,
-    startUsage,
-    stopUsage,
-    recordActivity,
-    getActivityHistory
-} = require("./lifecycle");
-
-const { getAssignedIP, lockFreeIP, assignIP, releaseIP } = require("./ip");
-
 async function getCustomerInstances(customerId) {
     const [rows] = await db.execute(
         `
@@ -128,15 +117,5 @@ module.exports = {
     getCustomerInstances,
     createInstance,
     getInstanceById,
-    getInstanceForUpdate,
-    setInstanceStatus,
-    openUsageCount,
-    startUsage,
-    stopUsage,
-    recordActivity,
-    getActivityHistory,
-    getAssignedIP,
-    lockFreeIP,
-    assignIP,
-    releaseIP
+    getInstanceForUpdate
 };

@@ -1,5 +1,0 @@
-<div class="section-heading"><nav class="tabs" aria-label="Notification filters" data-tabs>
-<% for (const [key,label] of [['all','All'],['unread','Unread'],['resource','Resource'],['security','Security']]) { %><a href="?tab=<%= key %>" data-tab="<%= key %>" <%= key === 'all' ? 'aria-current=page' : '' %>><%= label %></a><% } %>
-</nav><button disabled>Mark all as read</button></div>
-<div class="panel"><%- include('../partials/unavailable', { heading: 'Notifications unavailable', message: 'Resource and security messages require the connected notification service.' }) %></div>
-

@@ -1,11 +1,9 @@
-const db = require("../../DAL/dbconn");
-const { withTransaction } = db;
+const { withTransaction } = require("../../DAL/dbconn");
 const repository = require("../../DAL/finance/invoice");
-const { HttpError, money, sumMoney, priceQuantity } = require("../../utils/util");
+const { HttpError, sumMoney, priceQuantity } = require("../../utils/util");
 const { bad, makeRef } = require("../../utils/helpers");
-const discounts = require("./discountService");
+const { MAX_MONEY, MAX_QUANTITY } = require("../../utils/constants");
 const { notify } = require("./notificationService");
-const { logAudit } = require("../../DAL/finance/audit");
 
 // Price items from pricing_rules (one query for all items)
 async function priceItems(db, items) {
@@ -23,7 +21,7 @@ async function priceItems(db, items) {
         if (
             !Number.isFinite(quantity) ||
             quantity <= 0 ||
-            quantity > 9999999999.9999 ||
+            quantity > MAX_QUANTITY ||
             Number(quantity.toFixed(4)) !== quantity
         )
             throw bad(
@@ -41,17 +39,14 @@ async function priceItems(db, items) {
             });
 
         const lineTotal = priceQuantity(quantity, unitPrice);
-        if (!Number.isFinite(lineTotal) || lineTotal > 9999999999.99)
+        if (!Number.isFinite(lineTotal) || lineTotal > MAX_MONEY)
             throw bad("Invoice item amount exceeds the supported limit.");
         return { ...item, quantity, unit_price: unitPrice, line_total: lineTotal };
     });
 }
 
 // Create invoice (must run inside a transaction). Input is validated by the routes.
-async function createInvoiceRecord(
-    db,
-    { customerId, periodStart, periodEnd, items, discountCode }
-) {
+async function createInvoiceRecord(db, { customerId, periodStart, periodEnd, items }) {
     const [[customer]] = await repository.findCustomer(db, customerId);
     if (!customer) throw new HttpError(404, { error: `Customer ID ${customerId} does not exist.` });
     if (String(customer.role).toLowerCase() !== "customer")
@@ -59,6 +54,11 @@ async function createInvoiceRecord(
 
     // Provider allocations must be legitimate: otherwise customers could pay an invoice
     // whose earnings cannot be assigned to the correct provider.
+    const priced = await priceItems(db, items);
+    const subtotal = sumMoney(priced.map((item) => item.line_total));
+    if (subtotal === 0)
+        throw new HttpError(409, { error: "There is no payable amount for this billing period." });
+    if (subtotal > MAX_MONEY) throw bad("Invoice subtotal exceeds the supported limit.");
     const providerIds = [...new Set(items.map((item) => Number(item.provider_id)))];
     if (providerIds.some((id) => !Number.isSafeInteger(id) || id <= 0))
         throw bad(
@@ -68,9 +68,7 @@ async function createInvoiceRecord(
     if (existingProviders.length !== providerIds.length)
         throw bad("One or more Provider IDs do not belong to provider accounts.");
 
-    const [periods] = await repository.lockBillingPeriod(db, [customerId, periodStart, periodEnd]);
-
-    const conflict = periods.find((period) => period.invoice_id != null);
+    const [[conflict]] = await repository.findOverlappingInvoice(db, [customerId, periodStart, periodEnd]);
     if (conflict) {
         throw new HttpError(409, {
             error: "An invoice already exists for an overlapping billing period.",
@@ -79,48 +77,16 @@ async function createInvoiceRecord(
         });
     }
 
-    let periodId = periods.find(
-        (period) => period.period_start === periodStart && period.period_end === periodEnd
-    )?.id;
-    if (!periodId) {
-        try {
-            const [result] = await repository.insertBillingPeriod(db, [
-                customerId,
-                periodStart,
-                periodEnd
-            ]);
-
-            periodId = result.insertId;
-        } catch (error) {
-            if (error.code === "ER_DUP_ENTRY")
-                throw new HttpError(409, { error: "This billing period already exists." });
-            throw error;
-        }
-    }
-
-    const discount = discountCode ? await discounts.loadUsableDiscount(db, discountCode) : null;
-    const priced = await priceItems(db, items);
-    const subtotal = sumMoney(priced.map((item) => item.line_total));
-    if (subtotal > 9999999999.99) throw bad("Invoice subtotal exceeds the supported limit.");
-    const discountAmount = discount ? discounts.calculateDiscount(discount, subtotal) : 0;
-    const total = Math.max(0, money(subtotal - discountAmount));
-
-    if (discount) {
-        const [result] = await repository.redeemDiscount(db, [discount.id]);
-
-        if (!result.affectedRows)
-            throw new HttpError(409, { error: "Discount usage limit reached." });
-    }
-
+    const total = subtotal;
     const invoiceNumber = makeRef("INV");
 
     const [invoice] = await repository.insertInvoice(db, [
         invoiceNumber,
-        periodId,
+        customerId,
+        periodStart,
+        periodEnd,
         subtotal,
-        total,
-        discount?.id ?? null,
-        discountAmount
+        total
     ]);
 
     for (const item of priced)
@@ -137,7 +103,6 @@ async function createInvoiceRecord(
     await notify(db, {
         to: "Customer",
         id: customerId,
-        type: "InvoiceCreated",
         title: "New invoice",
         message: `Invoice ${invoiceNumber} for $${total.toFixed(2)} is ready for payment.`
     });
@@ -149,27 +114,23 @@ async function createInvoiceRecord(
         billing_period: { start: periodStart, end: periodEnd },
         status: "Unpaid",
         subtotal,
-        discount_code: discount?.code ?? null,
-        discount_amount: discountAmount,
         total,
         currency: "USD",
         items: priced
     };
 }
 
-const listInvoices = repository.listInvoices;
-
-async function getInvoice(db, id, customerId = null) {
-    const invoice = await repository.findInvoice(db, id, customerId);
+async function getInvoice(id, customerId = null) {
+    const invoice = await repository.findInvoice(id, customerId);
 
     if (!invoice) return null;
 
-    const [items] = await repository.listItems(db, [id]);
+    const [items] = await repository.listItems(id);
 
     return { ...invoice, currency: "USD", items };
 }
 
-async function cancelInvoice(id, actor) {
+async function cancelInvoice(id) {
     return withTransaction(async (connection) => {
         const [[invoice]] = await repository.lockInvoice(connection, id);
         if (!invoice) throw new HttpError(404, { error: `Invoice ID ${id} does not exist.` });
@@ -180,20 +141,14 @@ async function cancelInvoice(id, actor) {
         const [payments] = await repository.paymentExists(connection, id);
         if (payments.length)
             throw new HttpError(409, {
-                error: "This invoice has a payment record and cannot be cancelled. Use the refund process instead."
+                error: "This invoice has a payment record and cannot be cancelled."
             });
         const [result] = await repository.cancelInvoice(connection, id);
         if (!result.affectedRows)
             throw new HttpError(409, { error: "Invoice status changed. Reload and try again." });
-        await logAudit(connection, actor, "CancelInvoice", "Invoice", id, {
-            invoice_number: invoice.invoice_number,
-            previous_status: "Unpaid",
-            new_status: "Cancelled"
-        });
         await notify(connection, {
             to: "Customer",
             id: invoice.customer_id,
-            type: "InvoiceCancelled",
             title: "Invoice cancelled",
             message: `Invoice ${invoice.invoice_number} has been cancelled.`
         });
@@ -207,6 +162,6 @@ module.exports = {
     createInvoiceRecord,
     createInvoice: (input) =>
         withTransaction((connection) => createInvoiceRecord(connection, input)),
-    listInvoices: (customerId) => listInvoices(db, customerId),
-    getInvoice: (id, customerId) => getInvoice(db, id, customerId)
+    listInvoices: repository.listInvoices,
+    getInvoice
 };

@@ -1,17 +1,5 @@
 // System endpoints for Swagger UI.
 module.exports = {
-    "/": {
-        get: {
-            tags: ["System"],
-            summary: "Redirect to Swagger",
-            responses: {
-                302: {
-                    description: "Redirect to Swagger UI"
-                }
-            },
-            security: []
-        }
-    },
     "/api-docs.json": {
         get: {
             tags: ["System"],

@@ -1,4 +1,4 @@
-const dal = require("../../DAL/instances/instance");
+const dal = require("../../DAL/instances/lifecycle");
 const { fail, withLockedInstance } = require("./instanceUtils");
 
 async function startInstance(vmId, actor) {
@@ -9,21 +9,12 @@ async function startInstance(vmId, actor) {
         )
             fail(409, "Only a stopped instance can be started.");
 
-        if (await dal.openUsageCount(connection, vmId))
+        if (await dal.openUsageCount(connection, instance.resource_id))
             fail(409, "An active usage period already exists.");
 
         await dal.setInstanceStatus(connection, instance, "running", "active");
 
         await dal.startUsage(connection, instance);
-
-        await dal.recordActivity(
-            connection,
-            instance,
-            actor.id,
-            "started",
-            instance.resource_status,
-            "active"
-        );
 
         return { vmId, status: "running" };
     });
@@ -34,35 +25,18 @@ async function stopInstance(vmId, actor) {
         if (instance.vm_status !== "running" || instance.resource_status !== "active")
             fail(409, "Only a running instance can be stopped.");
 
-        if ((await dal.openUsageCount(connection, vmId)) !== 1)
+        if ((await dal.openUsageCount(connection, instance.resource_id)) !== 2)
             fail(409, "VM usage tracking is inconsistent.");
 
-        await dal.stopUsage(connection, vmId);
+        await dal.stopUsage(connection, instance.resource_id);
 
         await dal.setInstanceStatus(connection, instance, "stopped", "stopped");
-
-        await dal.recordActivity(connection, instance, actor.id, "stopped", "active", "stopped");
 
         return { vmId, status: "stopped" };
     });
 }
 
-async function restartInstance(vmId, actor) {
-    return withLockedInstance(vmId, actor, async (connection, instance) => {
-        if (instance.vm_status !== "running" || instance.resource_status !== "active")
-            fail(409, "Only a running instance can be restarted.");
-
-        if ((await dal.openUsageCount(connection, vmId)) !== 1)
-            fail(409, "VM usage tracking is inconsistent.");
-
-        await dal.recordActivity(connection, instance, actor.id, "restarted", "active", "active");
-
-        return { vmId, status: "running", simulated: true };
-    });
-}
-
 module.exports = {
     startInstance,
-    stopInstance,
-    restartInstance
+    stopInstance
 };

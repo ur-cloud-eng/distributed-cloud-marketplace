@@ -1,7 +1,0 @@
-<ul class="navigation">
-<% for (const [label, suffix] of navigation) {
-  const href = base + suffix;
-  const active = suffix ? currentPath.startsWith(href) : currentPath === base;
-%><li><a href="<%= href %>" <% if (active) { %>aria-current="page"<% } %>><%= label %></a></li>
-<% } %></ul>
-

@@ -5,7 +5,7 @@ module.exports = {
             tags: ["Notifications"],
             summary: "List my notifications (Admin can also query a recipient)",
             description:
-                "Includes invoice creation/cancellation, payment/refund events, withdrawal requests and withdrawal status updates.",
+                "Includes invoice creation and cancellation, successful payments, and provider earnings.",
             parameters: [
                 {
                     name: "recipient_type",
@@ -31,7 +31,7 @@ module.exports = {
             ],
             responses: {
                 200: {
-                    description: "Notifications for the logged-in user"
+                    description: "Billing notifications for the selected inbox, including id, recipient_type, recipient_id, category, title, message, payment_id, is_read and created_at"
                 },
                 401: {
                     description: "Not logged in"
@@ -65,7 +65,7 @@ module.exports = {
             ],
             responses: {
                 200: {
-                    description: "Marked as read"
+                    description: "Returns the notification id and is_read set to true"
                 },
                 400: { description: "Invalid notification ID or admin recipient filter" },
                 401: {

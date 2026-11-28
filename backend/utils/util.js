@@ -34,32 +34,6 @@ function prorateMoney(amount, numerator, denominator) {
     return Number(result) / 100;
 }
 
-// Split money proportionally while preserving the exact total to the cent.
-function allocateAmounts(total, weights) {
-    const cents = BigInt(toCents(total));
-    const units = weights.map((value) => BigInt(toCents(value)));
-    if (cents < 0n || units.some((value) => value < 0n))
-        throw new RangeError("Allocations must be non-negative.");
-    const sum = units.reduce((result, value) => result + value, 0n);
-    if (!sum) {
-        if (cents) throw new RangeError("A positive total requires a positive allocation weight.");
-        return weights.map(() => 0);
-    }
-    const shares = units.map((value) => cents * value);
-    const allocated = shares.map((value) => value / sum);
-    let remaining = cents - allocated.reduce((result, value) => result + value, 0n);
-    const order = shares
-        .map((value, index) => ({ index, fraction: value % sum }))
-        .sort((a, b) =>
-            a.fraction === b.fraction ? a.index - b.index : a.fraction > b.fraction ? -1 : 1
-        );
-    for (const item of order) {
-        if (remaining-- <= 0n) break;
-        allocated[item.index] += 1n;
-    }
-    return allocated.map((value) => Number(value) / 100);
-}
-
 function positiveInteger(value) {
     if (
         value === null ||
@@ -91,11 +65,9 @@ class HttpError extends Error {
 
 module.exports = {
     money,
-    toCents,
     priceQuantity,
     sumMoney,
     prorateMoney,
-    allocateAmounts,
     positiveInteger,
     isDate,
     HttpError

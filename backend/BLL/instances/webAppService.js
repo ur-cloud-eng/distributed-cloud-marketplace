@@ -13,11 +13,10 @@ async function create(customerId, groupId, data) {
         async (connection) => {
             if (
                 databaseId !== null &&
-                !(await allocation.lockResource(
+                !(await allocation.lockDatabase(
                     connection,
                     customerId,
                     groupId,
-                    "database_id",
                     databaseId
                 ))
             )

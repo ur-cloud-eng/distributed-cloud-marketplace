@@ -85,14 +85,6 @@ CREATE TABLE VirtualMachines (
     KEY idx_vms_host (host_id,hosting_class)
 ) ENGINE=InnoDB;
 
--- Optional Developer 2 simulated IP pool. Fill with test-only addresses when needed.
-CREATE TABLE IF NOT EXISTS InstanceIPPool (
-    ip_address VARCHAR(45) NOT NULL PRIMARY KEY,
-    vm_id BIGINT NULL,
-    allocated_at DATETIME NULL,
-    UNIQUE KEY uq_ip_vm (vm_id)
-) ENGINE=InnoDB;
-
 CREATE TABLE LoadBalancers (
     lb_id INT AUTO_INCREMENT PRIMARY KEY,
     vnet_id INT NOT NULL,
@@ -105,84 +97,19 @@ CREATE TABLE LoadBalancers (
     CONSTRAINT uq_lb_per_vnet UNIQUE (vnet_id,name)
 ) ENGINE=InnoDB;
 
-CREATE TABLE LoadBalancerTargets (
-    lb_id INT NOT NULL,
-    vm_id INT NOT NULL,
-    PRIMARY KEY (lb_id,vm_id),
-    CONSTRAINT fk_lb_targets_lb FOREIGN KEY (lb_id) REFERENCES LoadBalancers(lb_id)
-        ON DELETE CASCADE ON UPDATE RESTRICT,
-    CONSTRAINT fk_lb_targets_vm FOREIGN KEY (vm_id) REFERENCES VirtualMachines(vm_id)
-        ON DELETE RESTRICT ON UPDATE RESTRICT,
-    KEY idx_lb_targets_vm (vm_id)
-) ENGINE=InnoDB;
-
--- One VM runtime interval. Historical quantities are snapshotted on write.
--- Dev 2 uses these additional fields for billing. Dev 1 retains usage_id.
-CREATE TABLE VmUsage (
-    usage_id INT AUTO_INCREMENT PRIMARY KEY,
-    vm_id INT NOT NULL,
-    customer_id INT NOT NULL,
-    provider_id INT NOT NULL,
-    cloud_class ENUM('Economy','Business','Critical') NOT NULL,
-    cpu_cores DECIMAL(12,2) NOT NULL,
-    ram_gb DECIMAL(12,2) NOT NULL,
-    gpu_units DECIMAL(12,2) NOT NULL DEFAULT 0,
-    started_at DATETIME NOT NULL,
-    stopped_at DATETIME NULL,
-    simulated_cost DECIMAL(12,2) NOT NULL DEFAULT 0,
-    provider_earning DECIMAL(12,2) NOT NULL DEFAULT 0,
-    CONSTRAINT fk_vm_usage_vm FOREIGN KEY (vm_id) REFERENCES VirtualMachines(vm_id)
-        ON DELETE RESTRICT ON UPDATE RESTRICT,
-    CONSTRAINT fk_vm_usage_customer FOREIGN KEY (customer_id) REFERENCES Users(user_id)
-        ON DELETE RESTRICT ON UPDATE RESTRICT,
-    CONSTRAINT fk_vm_usage_provider FOREIGN KEY (provider_id) REFERENCES Users(user_id)
-        ON DELETE RESTRICT ON UPDATE RESTRICT,
-    KEY idx_vm_usage_start (vm_id, started_at),
-    CONSTRAINT ck_vm_usage_times CHECK (stopped_at IS NULL OR stopped_at >= started_at),
-    CONSTRAINT ck_vm_usage_quantity CHECK (cpu_cores > 0 AND ram_gb > 0 AND gpu_units >= 0),
-    CONSTRAINT ck_vm_usage_cost CHECK (simulated_cost >= 0 AND provider_earning >= 0),
-    KEY idx_vm_usage_customer (customer_id,started_at),
-    KEY idx_vm_usage_provider (provider_id,started_at)
-) ENGINE=InnoDB;
-
--- ---------------------- STORAGE AND MANAGED SERVICES -------------------------
-CREATE TABLE InstanceStorageUsage (
-    vm_id BIGINT NOT NULL PRIMARY KEY,
-    customer_id BIGINT NOT NULL,
-    provider_id BIGINT NOT NULL,
-    cloud_class VARCHAR(32) NOT NULL,
-    quantity DECIMAL(12,3) NOT NULL,
-    started_at DATETIME NOT NULL,
-    ended_at DATETIME NULL,
-    KEY idx_storage_customer (customer_id, started_at, ended_at)
-) ENGINE=InnoDB;
-
-CREATE TABLE BlobStorage (
-    blob_id INT AUTO_INCREMENT PRIMARY KEY,
+CREATE TABLE StorageVolumes (
+    storage_id INT AUTO_INCREMENT PRIMARY KEY,
     group_id INT NOT NULL,
+    storage_type ENUM('BLOB_STORAGE','FILE_STORAGE') NOT NULL,
     name VARCHAR(100) NOT NULL,
     size_gb INT NOT NULL,
     status ENUM('active','inactive') NOT NULL DEFAULT 'active',
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT fk_blob_group FOREIGN KEY (group_id) REFERENCES ResourceGroups(group_id)
+    CONSTRAINT fk_storage_group FOREIGN KEY (group_id) REFERENCES ResourceGroups(group_id)
         ON DELETE RESTRICT ON UPDATE RESTRICT,
-    CONSTRAINT uq_blob_per_group UNIQUE (group_id,name),
-    CONSTRAINT uq_blob_id_group UNIQUE (blob_id,group_id),
-    CONSTRAINT ck_blob_size CHECK (size_gb > 0)
-) ENGINE=InnoDB;
-
-CREATE TABLE FileStorage (
-    file_id INT AUTO_INCREMENT PRIMARY KEY,
-    group_id INT NOT NULL,
-    name VARCHAR(100) NOT NULL,
-    size_gb INT NOT NULL,
-    status ENUM('active','inactive') NOT NULL DEFAULT 'active',
-    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT fk_file_group FOREIGN KEY (group_id) REFERENCES ResourceGroups(group_id)
-        ON DELETE RESTRICT ON UPDATE RESTRICT,
-    CONSTRAINT uq_file_per_group UNIQUE (group_id,name),
-    CONSTRAINT uq_file_id_group UNIQUE (file_id,group_id),
-    CONSTRAINT ck_file_size CHECK (size_gb > 0)
+    CONSTRAINT uq_storage_per_group UNIQUE (group_id,storage_type,name),
+    CONSTRAINT uq_storage_id_group UNIQUE (storage_id,group_id),
+    CONSTRAINT ck_storage_size CHECK (size_gb > 0)
 ) ENGINE=InnoDB;
 
 CREATE TABLE ManagedDatabases (

@@ -1,7 +1,0 @@
-<p class="notice">No host record is loaded. Availability and removal actions require the existing backend.</p>
-<div class="detail-actions"><button disabled>Mark unavailable</button><button disabled>Remove host</button></div>
-<div class="two-column"><div class="stack">
-<section class="panel"><h2>Capacity</h2><dl class="property-list"><% for (const label of ['CPU','RAM','Disk','Free']) { %><div><dt><%= label %></dt><dd>Unavailable</dd></div><% } %></dl></section>
-<section class="panel"><h2>Metadata</h2><dl class="property-list"><% for (const label of ['Host name','Region','Hosting class','Status','Registered']) { %><div><dt><%= label %></dt><dd>Unavailable</dd></div><% } %></dl></section>
-</div><aside><h2>Allocated virtual machines</h2><%- include('../partials/table', { caption: 'Allocated virtual machines', columns: ['Virtual machine','Size','Status'] }) %></aside></div>
-

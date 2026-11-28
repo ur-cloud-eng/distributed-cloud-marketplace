@@ -42,18 +42,16 @@ async function register(connection, groupId, customerId, type, column, entityId)
         VALUES (?,?,?,?,'active',UTC_TIMESTAMP())`,
         [groupId, customerId, type, entityId]
     );
-    await connection.execute(
-        `INSERT INTO ResourceActivityLogs
-        (actor_user_id,resource_id,entity_type,entity_pk,action,new_status)
-        VALUES (?,?,?,?,'created','active')`,
-        [customerId, result.insertId, type, entityId]
-    );
     return result.insertId;
 }
 
 async function list(customerId, groupId, model, entityId = null) {
+    const type = model.type ?? null;
+    const fields = model.legacyId
+        ? `e.storage_id AS ${model.legacyId}, e.group_id,e.name,e.size_gb,e.status,e.created_at`
+        : "e.*";
     const [rows] = await db.execute(
-        `SELECT e.*, r.resource_id,r.resource_type,r.status AS resource_status,
+        `SELECT ${fields}, r.resource_id,r.resource_type,r.status AS resource_status,
         a.host_id,a.allocated_cpu,a.allocated_ram_gb,a.allocated_disk_gb,h.hosting_class
         FROM ${model.table} e JOIN ResourceRegistry r ON r.${model.column}=e.${model.column}
         JOIN ResourceGroups g ON g.group_id=r.group_id
@@ -61,18 +59,19 @@ async function list(customerId, groupId, model, entityId = null) {
         LEFT JOIN ProviderHosts h ON h.host_id=a.host_id
         WHERE r.customer_user_id=? AND r.group_id=? AND g.status='active'
         AND r.status NOT IN ('cancelled','deleted') AND (? IS NULL OR e.${model.column}=?)
+        AND (? IS NULL OR r.resource_type=?)
         ORDER BY e.${model.column}`,
-        [customerId, groupId, entityId, entityId]
+        [customerId, groupId, entityId, entityId, type, type]
     );
     return rows;
 }
 
-async function lockResource(connection, customerId, groupId, column, entityId) {
+async function lockDatabase(connection, customerId, groupId, databaseId) {
     const [rows] = await connection.execute(
         `SELECT * FROM ResourceRegistry
-        WHERE customer_user_id=? AND group_id=? AND ${column}=?
+        WHERE customer_user_id=? AND group_id=? AND database_id=?
         AND status NOT IN ('cancelled','deleted') FOR UPDATE`,
-        [customerId, groupId, entityId]
+        [customerId, groupId, databaseId]
     );
     return rows[0];
 }
@@ -81,4 +80,4 @@ async function cancelResource(resourceId, actorId) {
     await db.query("CALL sp_CancelResource(?, ?)", [resourceId, actorId]);
 }
 
-module.exports = { lockHosts, usage: hosts.usage, reserve, register, list, lockResource, cancelResource };
+module.exports = { lockHosts, usage: hosts.usage, reserve, register, list, lockDatabase, cancelResource };

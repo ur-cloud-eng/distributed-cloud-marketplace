@@ -93,16 +93,9 @@ function validateRecommendation(proposal) {
             d => d.type !== requiredParent
         );
 
-        for (const dependency of optional) {
-            const valid =
-                (resource.type === "Load Balancer" &&
-                    dependency.type === "Virtual Machine") ||
-                (resource.type === "Web App" &&
-                    databaseTypes.includes(dependency.type));
-
-            if (!valid) {
-                throw new Error("Unsupported dependency.");
-            }
+        if (optional.length &&
+            (resource.type !== "Web App" || optional.some(d => !databaseTypes.includes(d.type)))) {
+            throw new Error("Unsupported dependency.");
         }
 
         if (resource.type === "Web App") {
@@ -110,17 +103,6 @@ function validateRecommendation(proposal) {
                 optional.some(d =>
                     !d.dependsOn.includes(parents[0].id))) {
                 throw new Error("Invalid Web App database.");
-            }
-        }
-
-        if (resource.type === "Load Balancer") {
-            for (const vm of optional) {
-                const subnet = resources.get(vm.dependsOn[0]);
-
-                if (!subnet ||
-                    !subnet.dependsOn.includes(parents[0].id)) {
-                    throw new Error("VM must be in the same VNet.");
-                }
             }
         }
     }

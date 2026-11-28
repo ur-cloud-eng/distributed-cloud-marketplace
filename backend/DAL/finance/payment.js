@@ -1,5 +1,4 @@
 const { query, where } = require("../query");
-// Data Access Layer: SQL statements for paymentService.
 
 const markInvoicePaid = (connection, params = []) =>
     connection.execute("UPDATE invoices SET status = 'Paid' WHERE id = ?", params);
@@ -23,21 +22,10 @@ const insertPayment = (connection, params = []) =>
         params
     );
 
-const lockInvoice = (connection, params = []) =>
-    connection.execute(
-        `
-            SELECT i.id, i.total, i.status, bp.customer_id
-            FROM invoices i
-            JOIN billing_periods bp ON bp.id = i.billing_period_id
-            WHERE i.id = ? FOR UPDATE
-        `,
-        params
-    );
-
 const providerInvoiceTotals = (connection, params = []) =>
     connection.execute(
         `
-        SELECT provider_id, SUM(line_total) AS gross
+        SELECT provider_id, SUM(line_total) AS gross_amount
         FROM invoice_items
         WHERE invoice_id = ?
         GROUP BY provider_id ORDER BY provider_id
@@ -46,16 +34,14 @@ const providerInvoiceTotals = (connection, params = []) =>
     );
 
 function listPayments({ invoiceId = null, customerId = null } = {}) {
-    const w = where({ "p.invoice_id": invoiceId, "bp.customer_id": customerId });
+    const w = where({ "p.invoice_id": invoiceId, "i.customer_id": customerId });
 
     return query(
         `
         SELECT p.id, p.payment_reference, p.invoice_id, i.invoice_number,
-               p.amount, p.status, p.simulated, p.created_at, bp.customer_id,
-               COALESCE((SELECT SUM(r.amount) FROM refunds r WHERE r.payment_id = p.id AND r.status = 'Succeeded'), 0) AS refunded_amount
+               p.amount, p.status, p.simulated, p.created_at, i.customer_id
         FROM payments p
         JOIN invoices i ON i.id = p.invoice_id
-        JOIN billing_periods bp ON bp.id = i.billing_period_id
         ${w.sql}
         ORDER BY p.id DESC
     `,
@@ -68,6 +54,5 @@ module.exports = {
     markInvoicePaid,
     insertEarnings,
     insertPayment,
-    lockInvoice,
     providerInvoiceTotals
 };

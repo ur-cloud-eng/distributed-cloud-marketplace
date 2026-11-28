@@ -210,7 +210,7 @@ module.exports = {
                         schema: {
                             type: "object",
                             required: ["code"],
-                            properties: { code: { type: "string", example: "123456" } }
+                            properties: { code: { type: "string", pattern: "^[0-9]{6}$", example: "123456" } }
                         }
                     }
                 }
@@ -218,7 +218,8 @@ module.exports = {
             responses: {
                 200: { description: "Authenticated" },
                 400: { description: "Invalid code format" },
-                401: { description: "Invalid or expired challenge" }
+                401: { description: "Invalid code or expired challenge" },
+                429: { description: "Too many attempts" }
             }
         }
     },
@@ -236,6 +237,7 @@ module.exports = {
         post: {
             tags: ["Authentication"],
             summary: "Log out and clear session cookie",
+            security: [],
             responses: { 200: { description: "Logged out" } }
         }
     },

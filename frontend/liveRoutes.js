@@ -1,11 +1,10 @@
 const path = require('path');
 const express = require('express');
 const { checkAuthorization } = require('../backend/BLL/auth/userService');
-const { resourceTypes } = require('./preview/design');
 const pages = require('./livePages');
 const nav = {
     customer: [['Overview',''],['Resources','/resources'],['Billing','/billing'],['AI Advisor','/advisor'],['Notifications','/notifications'],['Account','/account']],
-    provider: [['Overview',''],['My Hosts','/hosts'],['Capacity','/capacity'],['Earnings','/earnings'],['Withdrawals','/withdrawals'],['Notifications','/notifications'],['Account','/account']],
+    provider: [['Overview',''],['My Hosts','/hosts'],['Capacity','/capacity'],['Earnings','/earnings'],['Notifications','/notifications'],['Account','/account']],
     admin: [['Overview',''],['Finance','/finance'],['Pricing','/pricing'],['Infrastructure','/infrastructure'],['Notifications','/notifications'],['Account','/account']]
 };
 module.exports = function(app) {
@@ -13,7 +12,7 @@ module.exports = function(app) {
     app.set('view engine', 'ejs');
     app.use('/assets', express.static(path.join(__dirname, 'public')));
     for (const [url, title] of Object.entries({'/':'Cloud resources, made accessible','/about':'About CortexOps','/contact':'Contact','/services':'Cloud services','/pricing':'Pricing'})) {
-        app.get(url, (req,res) => res.render('live/public', {title,url,resourceTypes}));
+        app.get(url, (req,res) => res.render('live/public', {title,url,resourceTypes:pages.resourceTypes}));
     }
     for (const key of ['login','register','verify-email','resend-verification','two-factor']) {
         app.get('/'+key, (req,res) => {

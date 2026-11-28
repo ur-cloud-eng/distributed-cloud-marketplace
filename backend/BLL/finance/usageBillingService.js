@@ -1,10 +1,7 @@
-const db = require("../../DAL/dbconn");
-const { withTransaction } = db;
+const { withReadSnapshot, withTransaction } = require("../../DAL/dbconn");
 const repository = require("../../DAL/finance/usageBilling");
 
-const { logAudit } = require("../../DAL/finance/audit");
-const { HttpError, money } = require("../../utils/util");
-const discounts = require("./discountService");
+const { HttpError, sumMoney } = require("../../utils/util");
 const { priceItems, createInvoiceRecord } = require("./invoiceService");
 
 const { HOURS_PER_MONTH } = require("../../utils/constants");
@@ -18,24 +15,26 @@ async function buildUsageItems(db, customerId, periodStart, periodEnd) {
     const start = `${periodStart} 00:00:00`;
     const end = `${periodEnd} 00:00:00`;
 
-    const [[row]] = await repository.billingCap(db, [end]);
+    const [[row]] = await repository.billingCap(db, end);
 
     const cap = row.cap;
-    const unmetered = await repository.unmeteredRunningVms(db, customerId, start, cap);
+    const unmetered = await repository.runningVmsWithoutOpenUsage(db, customerId, cap);
     if (unmetered.length)
         throw new HttpError(409, {
-            error: "Running VM has no usage records for this billing period. Resource lifecycle metering must be fixed before invoicing.",
+            error: "A running VM is missing open CPU or RAM usage. Repair its metering before invoicing.",
             vm_ids: unmetered
         });
-    const { vms, resources } = await repository.loadUsage(db, customerId, start, cap);
+    const resources = await repository.loadUsage(db, customerId, start, cap);
 
     const buckets = new Map();
     const timestamp = (value) => new Date(value.replace(" ", "T") + "Z").getTime();
+    const periodStartMs = timestamp(start);
+    const capMs = timestamp(cap);
     const seconds = (from, to) =>
         Math.max(
             0,
-            (Math.min(timestamp(to || cap), timestamp(cap)) -
-                Math.max(timestamp(from), timestamp(start))) /
+            (Math.min(to ? timestamp(to) : capMs, capMs) -
+                Math.max(timestamp(from), periodStartMs)) /
                 1000
         );
 
@@ -53,22 +52,6 @@ async function buildUsageItems(db, customerId, periodStart, periodEnd) {
 
         item.unit_hours += hours;
         buckets.set(key, item);
-    }
-
-    for (const vm of vms) {
-        for (const [type, quantity] of [
-            ["CPU", vm.cpu_cores],
-            ["RAM", vm.ram_gb],
-            ["GPU", vm.gpu_units]
-        ]) {
-            add(
-                vm.provider_id,
-                type,
-                vm.cloud_class,
-                quantity,
-                seconds(vm.started_at, vm.stopped_at)
-            );
-        }
     }
 
     for (const r of resources)
@@ -112,21 +95,10 @@ async function buildUsageItems(db, customerId, periodStart, periodEnd) {
 }
 
 // Preview invoice without saving
-async function previewUsageInvoice(db, { customerId, periodStart, periodEnd, discountCode }) {
+async function previewUsageInvoice(db, { customerId, periodStart, periodEnd }) {
     const built = await buildUsageItems(db, customerId, periodStart, periodEnd);
     const priced = built.items.length ? await priceItems(db, built.items) : [];
-    const subtotal = priced.reduce((sum, item) => money(sum + item.line_total), 0);
-
-    let discountAmount = 0;
-    let discountInfo = null;
-
-    if (discountCode) {
-        const { discount, reason } = await discounts.checkDiscount(db, discountCode);
-
-        discountInfo = { code: discountCode, usable: reason === null, reason };
-
-        if (!reason) discountAmount = discounts.calculateDiscount(discount, subtotal);
-    }
+    const subtotal = sumMoney(priced.map((item) => item.line_total));
 
     return {
         dry_run: true,
@@ -135,16 +107,14 @@ async function previewUsageInvoice(db, { customerId, periodStart, periodEnd, dis
         period_complete: built.period_complete,
         usage_counted_until: built.usage_counted_until,
         subtotal,
-        discount: discountInfo,
-        discount_amount: discountAmount,
-        total: Math.max(0, money(subtotal - discountAmount)),
+        total: subtotal,
         currency: "USD",
         items: priced
     };
 }
 
 // Generate invoice
-async function generateUsageInvoice(db, { customerId, periodStart, periodEnd, discountCode }) {
+async function generateUsageInvoice(db, { customerId, periodStart, periodEnd }) {
     const built = await buildUsageItems(db, customerId, periodStart, periodEnd);
 
     if (!built.period_complete)
@@ -155,38 +125,22 @@ async function generateUsageInvoice(db, { customerId, periodStart, periodEnd, di
 
     if (!built.items.length)
         throw new HttpError(409, {
-            error: "No billable usage found for this period."
+            error: "There is no payable amount for this billing period."
         });
 
     return createInvoiceRecord(db, {
         customerId,
         periodStart,
         periodEnd,
-        discountCode,
         items: built.items
     });
 }
 
-const previewUsageInvoiceForCustomer = (input) => previewUsageInvoice(db, input);
+const previewUsageInvoiceForCustomer = (input) =>
+    withReadSnapshot((connection) => previewUsageInvoice(connection, input));
 
-const generateUsageInvoiceForCustomer = (input, actor) =>
-    withTransaction(async (connection) => {
-        const created = await generateUsageInvoice(connection, input);
-        await logAudit(
-            connection,
-            actor,
-            "USAGE_INVOICE_GENERATED",
-            "invoice",
-            created.invoice_id,
-            {
-                customer_id: input.customerId,
-                period: [input.periodStart, input.periodEnd],
-                total: created.total,
-                discount_code: created.discount_code
-            }
-        );
-        return created;
-    });
+const generateUsageInvoiceForCustomer = (input) =>
+    withTransaction((connection) => generateUsageInvoice(connection, input));
 
 module.exports = {
     previewUsageInvoice: previewUsageInvoiceForCustomer,

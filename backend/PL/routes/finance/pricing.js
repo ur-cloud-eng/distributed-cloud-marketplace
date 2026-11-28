@@ -56,7 +56,7 @@ router.post(
         )
             throw bad("Invalid resource type, class, or price.");
 
-        const id = await pricing.createPrice(req.body, req.user);
+        const id = await pricing.createPrice(req.body);
 
         res.status(201).json({
             message: "Pricing rule created",
@@ -78,39 +78,24 @@ router.put(
 
         if (!id || !validPrice(price)) throw bad("Invalid pricing rule ID or price.");
 
-        const oldPrice = await pricing.updatePrice(id, price, req.user);
+        const oldPrice = await pricing.updatePrice(id, price);
 
         res.json({ message: "Price updated", id, old_price: oldPrice, new_price: price });
     }, "Could not update price.")
 );
 
-// Retire a rule without removing its price history or audit records.
 router.delete(
     "/:id",
     admin,
     handle(async (req, res) => {
         const id = positiveInteger(req.params.id);
         if (!id) throw bad("Invalid pricing rule ID.");
-        await pricing.deletePrice(id, req.user);
+        await pricing.deletePrice(id);
         res.json({
-            message: "Pricing rule deleted from the active catalog; history preserved.",
+            message: "Pricing rule retired from the active catalog.",
             id
         });
     }, "Could not delete pricing rule.")
-);
-
-// Pricing history
-router.get(
-    "/:id/history",
-    admin,
-    handle(async (req, res) => {
-        const id = positiveInteger(req.params.id);
-        if (!id) throw bad("Invalid pricing rule ID.");
-
-        const rows = await pricing.priceHistory(id);
-
-        res.json(rows);
-    }, "Could not load pricing history.")
 );
 
 module.exports = router;

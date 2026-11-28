@@ -1,6 +1,0 @@
-<div class="table-frame" tabindex="0" role="region" aria-label="<%= caption %>"><table>
-<caption class="sr-only"><%= caption %></caption>
-<thead><tr><% for (const column of columns) { %><th scope="col"><%= column %></th><% } %></tr></thead>
-<tbody><tr><td colspan="<%= columns.length %>"><%- include('unavailable', { heading: 'Data unavailable', message: 'Connect the existing backend to load these records.' }) %></td></tr></tbody>
-</table><div class="table-footer"><span class="muted">Records unavailable</span><div><button disabled>Previous</button><button disabled>Next</button></div></div></div>
-

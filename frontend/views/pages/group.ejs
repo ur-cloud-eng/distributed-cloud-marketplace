@@ -1,7 +1,0 @@
-<div class="detail-actions"><a class="button" href="<%= base %>/resources/create">Create resource</a><button disabled>Delete resource group</button></div>
-<%- include('../partials/detail-tabs') %>
-<div data-panel="overview" class="two-column"><div class="stack"><% for (const category of ['Networking','Compute','Storage and databases']) { %><section class="panel"><h2><%= category %></h2><p class="muted">Resource data unavailable.</p></section><% } %></div>
-<aside class="panel"><h2>Dependencies</h2><p class="muted">Group and relationship data unavailable.</p><a href="<%= base %>/dependencies">View dependency layout</a></aside></div>
-<div data-panel="dependencies" hidden><%- include('../partials/unavailable', { heading: 'Dependencies unavailable', message: 'Resource group relationships require backend records.' }) %></div>
-<div data-panel="activity" hidden><%- include('../partials/unavailable', { heading: 'Activity unavailable', message: 'Group activity requires backend records.' }) %></div>
-

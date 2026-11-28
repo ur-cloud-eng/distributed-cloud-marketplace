@@ -18,6 +18,7 @@ const hosts = require('../backend/BLL/instances/hostService');
 const groups = require('../backend/BLL/instances/resourceGroupService');
 const networks = require('../backend/BLL/instances/virtualNetworkService');
 const subnets = require('../backend/BLL/instances/subnetService');
+const balancers = require('../backend/BLL/instances/loadBalancerService');
 
 async function row(sql, params = []) {
     const [[result]] = await db.execute(sql, params);
@@ -26,7 +27,7 @@ async function row(sql, params = []) {
 
 const hasStatus = status => error => error.status === status;
 
-test('VM lifecycle with real MySQL', { timeout: 60000 }, async t => {
+test('Resource management with real MySQL', { timeout: 60000 }, async t => {
     const tag = `it-${randomUUID()}`;
     const ids = {};
     const users = [];
@@ -46,16 +47,16 @@ test('VM lifecycle with real MySQL', { timeout: 60000 }, async t => {
     async function state(vmStatus, registryStatus, openUsage, storageOpen, usageTotal) {
         const result = await row(
             `SELECT v.status AS vm_status, r.status AS resource_status, r.cancelled_at,
-                (SELECT COUNT(*) FROM VmUsage u WHERE u.vm_id=v.vm_id AND u.stopped_at IS NULL) AS open_usage,
-                (SELECT COUNT(*) FROM VmUsage u WHERE u.vm_id=v.vm_id) AS usage_total,
-                (SELECT COUNT(*) FROM InstanceStorageUsage s WHERE s.vm_id=v.vm_id AND s.ended_at IS NULL) AS storage_open
+                (SELECT COUNT(*) FROM ResourceUsagePeriods u WHERE u.resource_id=r.resource_id AND u.resource_type<>'Storage' AND u.ended_at IS NULL) AS open_usage,
+                (SELECT COUNT(*) FROM ResourceUsagePeriods u WHERE u.resource_id=r.resource_id AND u.resource_type<>'Storage') AS usage_total,
+                (SELECT COUNT(*) FROM ResourceUsagePeriods s WHERE s.resource_id=r.resource_id AND s.resource_type='Storage' AND s.ended_at IS NULL) AS storage_open
              FROM VirtualMachines v JOIN ResourceRegistry r ON r.vm_id=v.vm_id WHERE v.vm_id=?`, [ids.vm]);
         assert.ok(result, 'VM and registry row must exist');
         assert.equal(result.vm_status, vmStatus);
         assert.equal(result.resource_status, registryStatus);
-        assert.equal(Number(result.open_usage), openUsage);
+        assert.equal(Number(result.open_usage), openUsage * 2);
         assert.equal(Number(result.storage_open), storageOpen);
-        assert.equal(Number(result.usage_total), usageTotal);
+        assert.equal(Number(result.usage_total), usageTotal * 2);
         if (registryStatus === 'cancelled') assert.ok(result.cancelled_at);
     }
 
@@ -102,23 +103,15 @@ test('VM lifecycle with real MySQL', { timeout: 60000 }, async t => {
             await assert.rejects(vm.startInstance(ids.vm, actor), hasStatus(409));
             await state('running', 'active', 1, 1, 1);
         });
-        await step('restart without duplicating the usage interval', async () => {
-            const result = await vm.restartInstance(ids.vm, actor);
-            assert.equal(result.status, 'running');
-            await state('running', 'active', 1, 1, 1);
-        });
         await step('stop compute usage but retain disk usage and capacity', async () => {
             await vm.stopInstance(ids.vm, actor);
             await state('stopped', 'stopped', 0, 1, 1);
             await assert.rejects(vm.stopInstance(ids.vm, actor), hasStatus(409));
-            await assert.rejects(vm.restartInstance(ids.vm, actor), hasStatus(409));
             await capacity([2, 4, 20]);
         });
-        await step('start again and verify activity history', async () => {
+        await step('start again with a new compute usage interval', async () => {
             await vm.startInstance(ids.vm, actor);
             await state('running', 'active', 1, 1, 2);
-            const history = await vm.getActivityHistory(ids.vm, actor);
-            assert.deepEqual(history.map(item => item.action), ['started', 'stopped', 'restarted', 'started', 'created']);
         });
         await step('cancel running VM, close usage and release capacity', async () => {
             const result = await vm.deleteInstance(ids.vm, actor);
@@ -127,13 +120,84 @@ test('VM lifecycle with real MySQL', { timeout: 60000 }, async t => {
             await capacity([4, 8, 40]);
             const allocation = await row('SELECT released_at FROM HostCapacityAllocations WHERE vm_id=?', [ids.vm]);
             assert.ok(allocation?.released_at);
-            const storage = await row('SELECT ended_at FROM InstanceStorageUsage WHERE vm_id=?', [ids.vm]);
+            const storage = await row("SELECT u.ended_at FROM ResourceUsagePeriods u JOIN ResourceRegistry r USING(resource_id) WHERE r.vm_id=? AND u.resource_type='Storage'", [ids.vm]);
             assert.ok(storage?.ended_at);
-            const log = await row("SELECT action FROM ResourceActivityLogs WHERE entity_type='VIRTUAL_MACHINE' AND entity_pk=? ORDER BY log_id DESC LIMIT 1", [ids.vm]);
-            assert.equal(log.action, 'cancelled');
             assert.ok(!(await vm.getCustomerInstances(ids.customer)).some(item => item.vm_id === ids.vm));
             await assert.rejects(vm.startInstance(ids.vm, actor), hasStatus(404));
             await assert.rejects(vm.deleteInstance(ids.vm, actor), hasStatus(404));
+        });
+        await step('validate subnet containment, overlap and ownership', async () => {
+            const add = (customerId, cidrBlock) =>
+                subnets.create(customerId, ids.group, ids.network, { name: 'extra', cidrBlock });
+            await assert.rejects(add(ids.customer, '10.20.2.0/33'), hasStatus(400));
+            await assert.rejects(add(ids.customer, '10.21.0.0/24'), hasStatus(400));
+            await assert.rejects(add(ids.customer, '10.20.1.128/25'), hasStatus(409));
+            await assert.rejects(add(ids.other, '10.20.2.0/24'), hasStatus(404));
+        });
+        await step('rapid VM cycles preserve storage and reject conflicting usage', async () => {
+            ids.vm = await vm.createInstance(ids.customer, { ...spec, name: spec.name + '-rapid' });
+            const { resource_id: resourceId } = await vm.getInstanceById(ids.vm, actor);
+            const started = await Promise.allSettled([vm.startInstance(ids.vm, actor), vm.startInstance(ids.vm, actor)]);
+            assert.equal(started.filter(result => result.status === 'fulfilled').length, 1);
+            assert.ok(hasStatus(409)(started.find(result => result.status === 'rejected').reason));
+            const cpu = await row("SELECT * FROM ResourceUsagePeriods WHERE resource_id=? AND resource_type='CPU'", [resourceId]);
+            const insert = (providerId, quantity, start, end = null) => db.execute(
+                `INSERT INTO ResourceUsagePeriods
+                 (resource_id,customer_id,provider_id,resource_type,cloud_class,quantity,started_at,ended_at)
+                 VALUES (?,?,?,'CPU',?,?,?,?)`, [resourceId, ids.customer, providerId, cpu.cloud_class, quantity, start, end]);
+            await assert.rejects(insert(cpu.provider_id, cpu.quantity, cpu.started_at), /cannot overlap/);
+            const disk = await row("SELECT * FROM ResourceUsagePeriods WHERE resource_id=? AND resource_type='Storage'", [resourceId]);
+            await assert.rejects(db.execute(
+                `INSERT INTO ResourceUsagePeriods
+                 (resource_id,customer_id,provider_id,resource_type,cloud_class,quantity,started_at)
+                 VALUES (?,?,?,'Storage',?,?,?)`,
+                [resourceId, disk.customer_id, disk.provider_id, disk.cloud_class, disk.quantity, disk.started_at]),
+                /cannot overlap/);
+            await assert.rejects(insert(ids.customer, cpu.quantity, cpu.started_at), /host allocation/);
+            await assert.rejects(insert(cpu.provider_id, cpu.quantity + 1, cpu.started_at), /host allocation/);
+            await assert.rejects(db.execute(
+                "UPDATE ResourceRegistry SET status='cancelled', cancelled_at=UTC_TIMESTAMP(6) WHERE resource_id=?",
+                [resourceId]), /Close usage/);
+            await vm.stopInstance(ids.vm, actor);
+            await vm.startInstance(ids.vm, actor);
+            await assert.rejects(db.execute(
+                'UPDATE ResourceUsagePeriods SET ended_at=UTC_TIMESTAMP(6)+INTERVAL 1 SECOND WHERE usage_period_id=?',
+                [cpu.usage_period_id]), /cannot overlap/);
+            await vm.stopInstance(ids.vm, actor);
+            await vm.startInstance(ids.vm, actor);
+            await state('running', 'active', 1, 1, 3);
+            await vm.stopInstance(ids.vm, actor);
+            await state('stopped', 'stopped', 0, 1, 3);
+            await vm.deleteInstance(ids.vm, actor);
+            await state('stopped', 'cancelled', 0, 0, 3);
+            await assert.rejects(insert(cpu.provider_id, cpu.quantity, cpu.started_at), /resource owner and state/);
+            await capacity([4, 8, 40]);
+        });
+        await step('create, list, retrieve and cancel a load balancer with billable usage', async () => {
+            const balancer = await balancers.create(ids.customer, ids.group, {
+                name: tag, vnetId: ids.network, hostingClass: 'Economy', vcpu: 1, ramGb: 2, diskGb: 5
+            });
+            await subnets.remove(ids.customer, ids.group, ids.network, ids.subnet);
+            assert.equal(balancer.hostId, ids.host);
+            const resource = await balancers.get(ids.customer, ids.group, balancer.id);
+            assert.equal(resource.vnet_id, ids.network);
+            assert.ok((await balancers.list(ids.customer, ids.group)).some(item => item.lb_id === balancer.id));
+            await assert.rejects(balancers.remove(ids.other, ids.group, balancer.id), hasStatus(404));
+            await assert.rejects(networks.remove(ids.customer, ids.group, ids.network), hasStatus(409));
+            const usageCount = async open => {
+                const usage = await row(
+                    'SELECT COUNT(*) AS total FROM ResourceUsagePeriods WHERE resource_id=? AND (ended_at IS NULL)=?',
+                    [balancer.resourceId, open]
+                );
+                return Number(usage.total);
+            };
+            await capacity([3, 6, 35]);
+            assert.equal(await usageCount(true), 3);
+            assert.equal((await balancers.remove(ids.customer, ids.group, balancer.id)).cancelled, true);
+            assert.equal(await usageCount(false), 3);
+            assert.deepEqual(await balancers.list(ids.customer, ids.group), []);
+            await networks.remove(ids.customer, ids.group, ids.network);
+            await capacity([4, 8, 40]);
         });
     } finally {
         // Delete only this run's fixtures, including any unexpectedly created VM.
@@ -145,19 +209,27 @@ test('VM lifecycle with real MySQL', { timeout: 60000 }, async t => {
                     for (const { vm_id } of vms) {
                         const [[registry]] = await conn.execute('SELECT resource_id FROM ResourceRegistry WHERE vm_id=?', [vm_id]);
                         if (registry) {
-                            await conn.execute('DELETE FROM ResourceActivityLogs WHERE resource_id=?', [registry.resource_id]);
                             await conn.execute('DELETE FROM ResourceUsagePeriods WHERE resource_id=?', [registry.resource_id]);
                             await conn.execute('DELETE FROM ResourceRegistry WHERE resource_id=?', [registry.resource_id]);
                         }
-                        await conn.execute('UPDATE InstanceIPPool SET vm_id=NULL, allocated_at=NULL WHERE vm_id=?', [vm_id]);
-                        await conn.execute('DELETE FROM VmUsage WHERE vm_id=?', [vm_id]);
-                        await conn.execute('DELETE FROM InstanceStorageUsage WHERE vm_id=?', [vm_id]);
                         await conn.execute('DELETE FROM HostCapacityAllocations WHERE vm_id=?', [vm_id]);
                         await conn.execute('DELETE FROM VirtualMachines WHERE vm_id=?', [vm_id]);
                     }
                     await conn.execute('DELETE FROM Subnets WHERE subnet_id=?', [ids.subnet]);
                 }
-                if (ids.network) await conn.execute('DELETE FROM VirtualNetworks WHERE vnet_id=?', [ids.network]);
+                if (ids.network) {
+                    const [loadBalancers] = await conn.execute(
+                        'SELECT l.lb_id, r.resource_id FROM LoadBalancers l LEFT JOIN ResourceRegistry r ON r.lb_id=l.lb_id WHERE l.vnet_id=?',
+                        [ids.network]
+                    );
+                    for (const { lb_id, resource_id } of loadBalancers) {
+                        await conn.execute('DELETE FROM ResourceUsagePeriods WHERE resource_id=?', [resource_id]);
+                        await conn.execute('DELETE FROM HostCapacityAllocations WHERE resource_id=?', [resource_id]);
+                        await conn.execute('DELETE FROM ResourceRegistry WHERE resource_id=?', [resource_id]);
+                        await conn.execute('DELETE FROM LoadBalancers WHERE lb_id=?', [lb_id]);
+                    }
+                    await conn.execute('DELETE FROM VirtualNetworks WHERE vnet_id=?', [ids.network]);
+                }
                 if (ids.group) await conn.execute('DELETE FROM ResourceGroups WHERE group_id=?', [ids.group]);
                 if (ids.host) await conn.execute('DELETE FROM ProviderHosts WHERE host_id=?', [ids.host]);
                 for (const id of users) await conn.execute('DELETE FROM Users WHERE user_id=?', [id]);

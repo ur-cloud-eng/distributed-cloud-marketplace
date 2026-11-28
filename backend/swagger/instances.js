@@ -18,7 +18,7 @@ module.exports = {
     "/api/instances": {
         get: {
             tags: ["Instances"],
-            summary: "List my VMs (Developer 1)",
+            summary: "List my VMs",
             responses: { 200: { description: "Customer instances" }, ...errors }
         },
         post: {
@@ -61,21 +61,11 @@ module.exports = {
     "/api/instances/{id}": {
         get: endpoint("Get VM details and registry state"),
         delete: endpoint(
-            "Cancel VM via existing sp_CancelResource and release host capacity and close disk metering"
+            "Cancel VM, release host capacity, and close usage intervals"
         )
     },
     "/api/instances/{id}/start": { post: endpoint("Start stopped VM and record VM metered usage") },
     "/api/instances/{id}/stop": {
         post: endpoint("Stop VM and close compute usage (disk remains billable)")
-    },
-    "/api/instances/{id}/restart": {
-        post: endpoint("Simulate restart without splitting metered interval")
-    },
-    "/api/instances/{id}/activity": { get: endpoint("Retrieve resource activity log") },
-    "/api/instances/{id}/ip": {
-        post: endpoint(
-            "Assign optional simulated IP from InstanceIPPool (requires migration + pool entries)"
-        ),
-        delete: endpoint("Release optional simulated IP when stopped")
     }
 };

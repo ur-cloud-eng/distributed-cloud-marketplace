@@ -1,28 +1,27 @@
 const { where } = require("../query");
-// Data Access Layer: SQL statements for invoiceService.
 const db = require("../dbconn");
 
-const findCustomer = (connection = db, customerId) =>
+const findCustomer = (connection, customerId) =>
     connection.execute("SELECT user_id, role FROM Users WHERE user_id = ? LIMIT 1 FOR UPDATE", [
         customerId
     ]);
 
-const findProviders = (connection = db, ids) =>
+const findProviders = (connection, ids) =>
     connection.execute(
         `SELECT user_id FROM Users WHERE role = 'provider' AND user_id IN (${ids.map(() => "?").join(",")})`,
         ids
     );
 
-const listItems = (connection = db, params = []) =>
-    connection.execute(
+const listItems = (invoiceId) =>
+    db.execute(
         `
         SELECT provider_id, resource_type, cloud_class, quantity, unit_price, line_total
         FROM invoice_items WHERE invoice_id = ? ORDER BY id
     `,
-        params
+        [invoiceId]
     );
 
-const insertItem = (connection = db, params = []) =>
+const insertItem = (connection, params) =>
     connection.execute(
         `
             INSERT INTO invoice_items
@@ -32,58 +31,34 @@ const insertItem = (connection = db, params = []) =>
         params
     );
 
-const insertInvoice = (connection = db, params = []) =>
+const insertInvoice = (connection, params) =>
     connection.execute(
         `
         INSERT INTO invoices
-        (invoice_number, billing_period_id, status, subtotal, total, discount_code_id, discount_amount)
-        VALUES (?, ?, 'Unpaid', ?, ?, ?, ?)
+        (invoice_number, customer_id, period_start, period_end, status, subtotal, total)
+        VALUES (?, ?, ?, ?, 'Unpaid', ?, ?)
     `,
         params
     );
 
-const redeemDiscount = (connection = db, params = []) =>
+const findOverlappingInvoice = (connection, params) =>
     connection.execute(
-        `
-            UPDATE discount_codes SET used_count = used_count + 1
-            WHERE id = ? AND (max_uses IS NULL OR used_count < max_uses)
-        `,
+        `SELECT id AS invoice_id, invoice_number FROM invoices
+         WHERE customer_id=? AND period_end>? AND period_start<?
+         ORDER BY period_start, id LIMIT 1 FOR UPDATE`,
         params
     );
 
-const insertBillingPeriod = (connection = db, params = []) =>
-    connection.execute(
-        `
-                INSERT INTO billing_periods (customer_id, period_start, period_end) VALUES (?, ?, ?)
-            `,
-        params
-    );
+const listActivePrices = (connection) =>
+    connection.execute("SELECT resource_type, cloud_class, unit_price FROM pricing_rules WHERE active = TRUE");
 
-const lockBillingPeriod = (connection = db, params = []) =>
-    connection.execute(
-        `
-        SELECT bp.id, bp.period_start, bp.period_end, i.id AS invoice_id, i.invoice_number
-        FROM billing_periods bp LEFT JOIN invoices i ON i.billing_period_id = bp.id
-        WHERE bp.customer_id = ? AND bp.period_end > ? AND bp.period_start < ?
-        FOR UPDATE
-    `,
-        params
-    );
-
-const listActivePrices = (connection = db, params = []) =>
-    connection.execute(
-        "SELECT resource_type, cloud_class, unit_price FROM pricing_rules WHERE active = TRUE",
-        params
-    );
-
-async function listInvoices(db, customerId = null) {
-    const w = where({ "bp.customer_id": customerId });
+async function listInvoices(customerId = null) {
+    const w = where({ "i.customer_id": customerId });
 
     const [rows] = await db.execute(
         `
         SELECT ${columns}
         FROM invoices i
-        JOIN billing_periods bp ON bp.id = i.billing_period_id
         ${w.sql}
         ORDER BY i.created_at DESC, i.id DESC
     `,
@@ -93,12 +68,12 @@ async function listInvoices(db, customerId = null) {
     return rows;
 }
 
-const columns = `i.id, i.invoice_number, bp.customer_id, bp.period_start, bp.period_end, i.status, i.subtotal, i.discount_amount, i.discount_code_id, i.total, i.created_at`;
+const columns = `i.id, i.invoice_number, i.customer_id, i.period_start, i.period_end, i.status, i.subtotal, i.total, i.created_at`;
 
-async function findInvoice(db, id, customerId) {
-    const w = where({ "i.id": id, "bp.customer_id": customerId });
+async function findInvoice(id, customerId) {
+    const w = where({ "i.id": id, "i.customer_id": customerId });
     const [[invoice]] = await db.execute(
-        `SELECT ${columns} FROM invoices i JOIN billing_periods bp ON bp.id = i.billing_period_id ${w.sql}`,
+        `SELECT ${columns} FROM invoices i ${w.sql}`,
         w.params
     );
     return invoice || null;
@@ -107,8 +82,8 @@ async function findInvoice(db, id, customerId) {
 const lockInvoice = (connection, id) =>
     connection.execute(
         `
-    SELECT i.id, i.invoice_number, i.status, bp.customer_id
-    FROM invoices i JOIN billing_periods bp ON bp.id = i.billing_period_id
+    SELECT i.invoice_number, i.status, i.total, i.customer_id
+    FROM invoices i
     WHERE i.id = ? FOR UPDATE
 `,
         [id]
@@ -134,8 +109,6 @@ module.exports = {
     listItems,
     insertItem,
     insertInvoice,
-    redeemDiscount,
-    insertBillingPeriod,
-    lockBillingPeriod,
+    findOverlappingInvoice,
     listActivePrices
 };

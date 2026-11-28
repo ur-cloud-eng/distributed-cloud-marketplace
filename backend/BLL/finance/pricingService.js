@@ -2,7 +2,6 @@ const repository = require("../../DAL/finance/pricing");
 const db = require("../../DAL/dbconn");
 const { withTransaction } = db;
 const { priceQuantity, sumMoney, HttpError } = require("../../utils/util");
-const { logAudit } = require("../../DAL/finance/audit");
 const { bad, notFound } = require("../../utils/helpers");
 const {
     RESOURCE_TYPES,
@@ -11,10 +10,7 @@ const {
     CLOUD_CLASSES,
     HOURS_PER_MONTH
 } = require("../../utils/constants");
-const recordPrice = (connection, ruleId, oldPrice, newPrice) =>
-    repository.insertHistory(connection, [ruleId, oldPrice, newPrice]);
 const listPrices = async () => (await repository.listActiveRules())[0];
-const priceHistory = async (id) => (await repository.listHistory([id]))[0];
 
 async function calculatePrice({ cloud_class, cpu_cores, ram_gb, storage_gb, gpu_units = 0 }) {
     if (!CLOUD_CLASSES.includes(cloud_class)) throw bad("Invalid cloud class.");
@@ -37,16 +33,17 @@ async function calculatePrice({ cloud_class, cpu_cores, ram_gb, storage_gb, gpu_
     const [rows] = await repository.listClassPrices([cloud_class]);
 
     const rates = Object.fromEntries(rows.map((r) => [r.resource_type, Number(r.unit_price)]));
-    const missing = RESOURCE_TYPES.filter((type) => rates[type] === undefined);
+    const required = RESOURCE_TYPES.filter((type) => amounts[type] > 0);
+    const missing = required.filter((type) => rates[type] === undefined);
 
     if (missing.length)
         throw new HttpError(409, { error: `Missing pricing rules: ${missing.join(", ")}` });
 
-    if (Object.values(rates).some((rate) => !Number.isFinite(rate) || rate < 0))
+    if (required.some((type) => !Number.isFinite(rates[type]) || rates[type] < 0))
         throw new HttpError(409, { error: "Invalid pricing rule." });
 
     const breakdown = Object.fromEntries(
-        RESOURCE_TYPES.map((type) => [type, priceQuantity(amounts[type], rates[type])])
+        RESOURCE_TYPES.map((type) => [type, amounts[type] === 0 ? 0 : priceQuantity(amounts[type], rates[type])])
     );
     if (
         Object.values(breakdown).some(
@@ -72,8 +69,8 @@ async function calculatePrice({ cloud_class, cpu_cores, ram_gb, storage_gb, gpu_
     };
 }
 
-async function createPrice({ resource_type, cloud_class, unit_price }, actor) {
-    const id = await withTransaction(async (connection) => {
+async function createPrice({ resource_type, cloud_class, unit_price }) {
+    return withTransaction(async (connection) => {
         const [existing] = await repository.lockResourceClass(connection, [
             resource_type,
             cloud_class
@@ -87,7 +84,6 @@ async function createPrice({ resource_type, cloud_class, unit_price }, actor) {
         if (existing.length) {
             ruleId = existing[0].id;
             await repository.reactivateRule(connection, [unit_price, ruleId]);
-            await recordPrice(connection, ruleId, Number(existing[0].unit_price), unit_price);
         } else {
             const [result] = await repository.insertRule(connection, [
                 resource_type,
@@ -95,28 +91,13 @@ async function createPrice({ resource_type, cloud_class, unit_price }, actor) {
                 unit_price
             ]);
             ruleId = result.insertId;
-            await recordPrice(connection, ruleId, unit_price, unit_price);
         }
-        await logAudit(
-            connection,
-            actor,
-            existing.length ? "PRICING_RULE_REACTIVATED" : "PRICING_RULE_CREATED",
-            "pricing_rule",
-            ruleId,
-            {
-                resource_type,
-                cloud_class,
-                unit_price
-            }
-        );
         return ruleId;
     });
-
-    return id;
 }
 
-async function updatePrice(id, price, actor) {
-    const oldPrice = await withTransaction(async (connection) => {
+async function updatePrice(id, price) {
+    return withTransaction(async (connection) => {
         const [rows] = await repository.lockRule(connection, [id]);
 
         if (!rows.length || !rows[0].active) throw notFound("Active pricing rule not found.");
@@ -124,34 +105,21 @@ async function updatePrice(id, price, actor) {
         const old = Number(rows[0].unit_price);
 
         await repository.updatePrice(connection, [price, id]);
-        await recordPrice(connection, id, old, price);
-        await logAudit(connection, actor, "PRICING_RULE_UPDATED", "pricing_rule", id, {
-            old_price: old,
-            new_price: price
-        });
 
         return old;
     });
-
-    return oldPrice;
 }
 
-async function deletePrice(id, actor) {
+async function deletePrice(id) {
     await withTransaction(async (connection) => {
         const [rows] = await repository.lockRule(connection, [id]);
         if (!rows.length || !rows[0].active) throw notFound("Active pricing rule not found.");
         await repository.deactivateRule(connection, [id]);
-        await logAudit(connection, actor, "PRICING_RULE_DEACTIVATED", "pricing_rule", id, {
-            resource_type: rows[0].resource_type,
-            cloud_class: rows[0].cloud_class,
-            unit_price: Number(rows[0].unit_price)
-        });
     });
 }
 
 module.exports = {
     listPrices,
-    priceHistory,
     calculatePrice,
     createPrice,
     updatePrice,

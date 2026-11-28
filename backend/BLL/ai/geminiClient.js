@@ -4,10 +4,11 @@ const { dependencyRules } = require("./recommendationValidator");
 const instructions = `Help a first-time CortexOps customer choose a small cloud rental.
 Explain the plan in everyday language. Give each resource a short reason tied to the customer's needs.
 Call out assumptions, especially missing traffic or storage estimates. Avoid invented prices or promises of availability.
-Describe a recommendation only. Use unique IDs and reference those IDs in dependsOn.
+Describe a recommendation only. Never claim the resources have been deployed. Use unique IDs and reference those IDs in dependsOn.
 Each resource needs exactly one parent of the required type, except Resource Groups, which have none.
-Required parents: ${JSON.stringify(dependencyRules)}. Optional dependencies are a database in the same group
-for a Web App, and VMs on the same virtual network for a Load Balancer.
+Required parents: ${JSON.stringify(dependencyRules)}. A Web App may optionally depend on one managed database in the same group.
+A Load Balancer is a simulated rental whose only dependency is its parent Virtual Network.
+Do not recommend assigning or releasing IP addresses, restarting VMs, attaching VM targets, requesting refunds or withdrawals, or using discount codes.
 Give each group a region. Use the supplied host regions and classes when available.
 Every hosted resource requires hostingClass. Blob and File Storage require sizeGb only.
 Managed databases require vcpu, ramGb and sizeGb. VMs, load balancers and web apps need vcpu, ramGb and diskGb.

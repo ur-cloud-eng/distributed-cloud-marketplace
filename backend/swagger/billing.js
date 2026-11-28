@@ -3,7 +3,7 @@ module.exports = {
     "/api/billing/invoices": {
         get: {
             tags: ["Billing"],
-            summary: "List invoices",
+            summary: "List invoices (Admin)",
             parameters: [
                 {
                     name: "customer_id",
@@ -27,7 +27,7 @@ module.exports = {
         },
         post: {
             tags: ["Billing"],
-            summary: "Generate a simulated invoice",
+            summary: "Generate a simulated invoice (Admin)",
             requestBody: {
                 required: true,
                 content: {
@@ -54,10 +54,6 @@ module.exports = {
                                     type: "string",
                                     format: "date",
                                     example: "2026-11-01"
-                                },
-                                discount_code: {
-                                    type: "string",
-                                    nullable: true
                                 },
                                 resources: {
                                     type: "array",
@@ -102,13 +98,13 @@ module.exports = {
             },
             responses: {
                 201: {
-                    description: "Invoice generated"
+                    description: "Invoice generated with item prices, subtotal and total. Total equals the sum of the rounded line totals."
                 },
                 400: {
-                    description: "Invalid input or discount code"
+                    description: "Invalid invoice input"
                 },
                 409: {
-                    description: "Invoice already exists for this period"
+                    description: "The period has no payable amount, overlaps an existing invoice, or requires an unavailable pricing rule"
                 }
             }
         }
@@ -116,7 +112,7 @@ module.exports = {
     "/api/billing/invoices/{id}": {
         get: {
             tags: ["Billing"],
-            summary: "Get invoice details and items",
+            summary: "Get invoice details and items (Admin)",
             parameters: [
                 {
                     name: "id",
@@ -146,7 +142,7 @@ module.exports = {
             tags: ["Billing"],
             summary: "Cancel an unpaid invoice (Admin only)",
             description:
-                "Preserves invoice and line items, rejects paid or already cancelled invoices, and records an audit log entry.",
+                "Retains the invoice and its line items. Paid and cancelled invoices cannot be cancelled.",
             parameters: [
                 { name: "id", in: "path", required: true, schema: { type: "integer", minimum: 1 } }
             ],
@@ -163,7 +159,7 @@ module.exports = {
             tags: ["Billing"],
             summary: "Generate a usage-based invoice (Admin)",
             description:
-                "Bills running VM time (vm_usage) and existing resources (resource_usage_periods) inside the period. Stopped VMs are not billed. Prices are monthly, so usage is converted to unit-months (720-hour month by default). Use dry_run to preview without saving.",
+                "Bills VM compute while running, reserved VM storage until cancellation, and metered non-VM resources. Prices are monthly, so usage is converted to unit-months (720 hours by default). Use dry_run to preview without saving. A preview may total zero, but generation requires a positive total.",
             requestBody: {
                 required: true,
                 content: {
@@ -186,10 +182,6 @@ module.exports = {
                                     format: "date",
                                     example: "2026-10-01"
                                 },
-                                discount_code: {
-                                    type: "string",
-                                    nullable: true
-                                },
                                 dry_run: {
                                     type: "boolean",
                                     default: false
@@ -201,13 +193,13 @@ module.exports = {
             },
             responses: {
                 200: {
-                    description: "Dry-run preview (nothing saved)"
+                    description: "Preview with line items, subtotal, total, period_complete and usage_counted_until. No records are saved."
                 },
                 201: {
-                    description: "Invoice generated"
+                    description: "Invoice generated with item prices, subtotal and total. Total equals the sum of the rounded line totals."
                 },
                 400: {
-                    description: "Invalid input or discount code"
+                    description: "Invalid invoice input"
                 },
                 401: {
                     description: "Not logged in"
@@ -216,7 +208,7 @@ module.exports = {
                     description: "Your role may not use this endpoint"
                 },
                 409: {
-                    description: "Period not finished, invoice already exists, or no billable usage"
+                    description: "Period not finished, invoice already exists, no payable amount, or required metering or pricing is unavailable"
                 }
             }
         }
