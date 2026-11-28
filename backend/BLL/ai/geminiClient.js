@@ -12,18 +12,26 @@ Do not recommend assigning or releasing IP addresses, restarting VMs, attaching 
 Give each group a region. Use the supplied host regions and classes when available.
 Every hosted resource requires hostingClass. Blob and File Storage require sizeGb only.
 Managed databases require vcpu, ramGb and sizeGb. VMs, load balancers and web apps need vcpu, ramGb and diskGb.
-Use positive whole numbers for all sizes. Give the smallest reasonable plan even if capacity is unavailable.`;
+Use positive whole numbers for all sizes. Give the smallest reasonable plan even if capacity is unavailable.
+Every resource MUST include a region.
+The Resource Group MUST have a valid non-empty region.
+Child resources must use the region of their Resource Group.
+All hosted resources, including storage, must have a hostingClass.
+Do not recommend more than 50 resources.
+Do not promise unsupported features such as automated backups.
+Prefer the smallest reasonable architecture.
+CortexOps is a simulation. Do not imply that real infrastructure is deployed.`;
 
 const text = { type: "string" };
-const size = { type: "integer", minimum: 1 };
+const size = { type: "integer" };
 const schema = {
     type: "object",
     required: ["summary", "resources", "warnings"],
     properties: {
         summary: text,
         warnings: { type: "array", items: text },
-        resources: { type: "array", minItems: 1, maxItems: 50, items: {
-            type: "object", required: ["id", "name", "type", "dependsOn", "reason"],
+        resources: { type: "array", items: {
+            type: "object", required: ["id", "name", "type", "dependsOn", "reason", "region"],
             properties: {
                 id: text, name: text, reason: text, region: text,
                 type: { type: "string", enum: Object.keys(dependencyRules) },
